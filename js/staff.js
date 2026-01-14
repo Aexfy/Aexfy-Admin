@@ -256,6 +256,23 @@
     };
   }
 
+  async function deleteRemoteUser(user) {
+    if (!window.supabaseClient || !user || !user.id) return { ok: false, skipped: true };
+    var response = await window.supabaseClient.functions.invoke('admin-user-action', {
+      body: {
+        action: 'delete',
+        user_id: user.id
+      }
+    });
+    if (response.error) throw response.error;
+    if (response.data && response.data.error) {
+      var err = new Error(response.data.message || response.data.error);
+      err.code = response.data.error;
+      throw err;
+    }
+    return response.data || { ok: true };
+  }
+
   function getPasswordRedirectUrl() {
     try {
       return new URL('crear-contrasena.html', window.location.href).href;
@@ -395,15 +412,24 @@
     }
   }
 
-  async function handleDelete(staffId) {
+  async function handleDelete(staffId, button) {
     var staffUser = N.state.users.find(function(item) { return item.id === staffId; });
     if (!staffUser) return;
     if (!window.confirm('Eliminar este staff del estado?')) return;
 
-    N.state.users = N.state.users.filter(function(item) { return item.id !== staffId; });
-    N.audit.log('staff_delete', { id: staffId, email: staffUser.email });
-    await N.data.saveState();
-    render();
+    var unlock = N.utils.lockButton(button);
+    if (!unlock) return;
+    try {
+      await deleteRemoteUser(staffUser);
+      N.state.users = N.state.users.filter(function(item) { return item.id !== staffId; });
+      N.audit.log('staff_delete', { id: staffId, email: staffUser.email });
+      await N.data.saveState();
+      render();
+    } catch (_err) {
+      N.ui.showToast('No fue posible eliminar el staff.', 'error');
+    } finally {
+      unlock();
+    }
   }
 
   function render(dataToRender) {
@@ -497,7 +523,7 @@
         var staffUser = N.state.users.find(function(item) { return item.id === id; });
 
         if (action === 'edit' && staffUser) openStaffModal(staffUser);
-        if (action === 'delete') handleDelete(id);
+        if (action === 'delete') handleDelete(id, button);
       });
     }
 

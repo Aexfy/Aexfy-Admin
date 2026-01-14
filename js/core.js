@@ -47,6 +47,7 @@
   N.state = {
     isReady: false,
     isLoading: false,
+    isSaving: false,
     lastSyncAt: null,
     companies: [],
     users: [],
@@ -549,17 +550,17 @@
     saveState: async function(options) {
       options = options || {};
       var silent = !!options.silent;
-      if (!N.config.REMOTE_ENABLED || N.state.isLoading) return;
+      if (!N.config.REMOTE_ENABLED || N.state.isSaving) return;
       if (!window.supabaseClient) return;
 
-      N.state.isLoading = true;
+      N.state.isSaving = true;
       if (!silent && N.ui && N.ui.setGlobalLoading) {
         N.ui.setGlobalLoading(true, 'Guardando cambios...');
       }
 
       var accessToken = await N.data.getAccessToken();
       if (!accessToken) {
-        N.state.isLoading = false;
+        N.state.isSaving = false;
         if (!silent && N.ui && N.ui.setGlobalLoading) {
           N.ui.setGlobalLoading(false);
         }
@@ -623,7 +624,7 @@
         }
       }
 
-      N.state.isLoading = false;
+      N.state.isSaving = false;
       if (!silent && N.ui && N.ui.setGlobalLoading) {
         N.ui.setGlobalLoading(false);
       }
