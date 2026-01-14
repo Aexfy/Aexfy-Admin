@@ -632,6 +632,12 @@
       if (saved) {
         N.data.saveCache();
       }
+      if (saved && N.auth && typeof N.auth.syncSessionWithState === 'function') {
+        N.auth.syncSessionWithState('save');
+      }
+      if (saved) {
+        document.dispatchEvent(new CustomEvent('state:updated'));
+      }
       if (saved && !silent && N.ui && N.ui.showToast) {
         N.ui.showToast('Cambios guardados', 'success');
       }
