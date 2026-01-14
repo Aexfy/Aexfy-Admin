@@ -261,7 +261,8 @@
     var response = await window.supabaseClient.functions.invoke('admin-user-action', {
       body: {
         action: 'delete',
-        user_id: user.id
+        user_id: user.auth_id || user.id,
+        user_email: user.email || ''
       }
     });
     if (response.error) throw response.error;
@@ -392,6 +393,7 @@
         var user = result.user || {};
         var newStaff = {
           id: user.id || N.utils.uid('stf'),
+          auth_id: user.id || '',
           email: data.email || user.email || '',
           status: data.status || 'active',
           user_metadata: payload,

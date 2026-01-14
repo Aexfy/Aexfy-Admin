@@ -46,6 +46,20 @@
           logDebug('Module init failed:', name);
         }
       }
+    });
+
+    renderModules();
+
+    modulesInitialized = true;
+    if (document.body) {
+      document.body.classList.add('is-ready');
+    }
+  }
+
+  function renderModules() {
+    MODULES.forEach(function(name) {
+      var mod = N[name];
+      if (!mod) return;
       if (typeof mod.render === 'function') {
         try {
           mod.render();
@@ -54,11 +68,6 @@
         }
       }
     });
-
-    modulesInitialized = true;
-    if (document.body) {
-      document.body.classList.add('is-ready');
-    }
   }
 
   app.init = function() {
@@ -75,6 +84,10 @@
       N.data.bootstrapState({ cacheOnly: true });
     }
     document.addEventListener('state:updated', initializeModules);
+  };
+
+  app.refreshModules = function() {
+    renderModules();
   };
 
   document.addEventListener('DOMContentLoaded', app.init);

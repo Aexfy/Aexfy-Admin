@@ -554,6 +554,7 @@
         var user = response.data && response.data.user ? response.data.user : null;
         N.state.users.push({
           id: user && user.id ? user.id : N.utils.uid('usr'),
+          auth_id: user && user.id ? user.id : '',
           email: email,
           status: 'active',
           user_metadata: metadata,

@@ -8,6 +8,8 @@
 
   var auth = N.auth = {};
   var ui = {};
+  var sessionSyncInProgress = false;
+  var sessionBlockInProgress = false;
 
   function getAccessLevel(user) {
     if (!user) return 'none';
@@ -97,6 +99,150 @@
     });
   }
 
+  function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
+
+  function normalizeRoleList(list) {
+    if (!Array.isArray(list)) return [];
+    return list.map(function(role) {
+      return String(role || '').trim().toLowerCase();
+    }).filter(Boolean);
+  }
+
+  function rolesMatch(a, b) {
+    var left = normalizeRoleList(a).sort().join(',');
+    var right = normalizeRoleList(b).sort().join(',');
+    return left === right;
+  }
+
+  function getStateStatus(user) {
+    if (!user) return '';
+    var raw = user.status || (user.user_metadata && user.user_metadata.status) || '';
+    return String(raw || '').trim().toLowerCase();
+  }
+
+  function isActiveStatus(status) {
+    return !status || status === 'active' || status === 'activo';
+  }
+
+  function getStateUser(sessionUser) {
+    if (!sessionUser || !Array.isArray(N.state.users) || !N.state.users.length) return null;
+    var sessionId = sessionUser.id || '';
+    var sessionEmail = N.utils.normalizeEmail(sessionUser.email || '');
+    return N.state.users.find(function(item) {
+      if (!item) return false;
+      if (item.auth_id && sessionId && item.auth_id === sessionId) return true;
+      if (item.id && sessionId && isUuid(sessionId) && item.id === sessionId) return true;
+      var itemEmail = N.utils.normalizeEmail(item.email || '');
+      return sessionEmail && itemEmail && sessionEmail === itemEmail;
+    }) || null;
+  }
+
+  function getLandingPage(accessLevel) {
+    if (accessLevel === 'owner' || accessLevel === 'manager') return 'superusuario.html';
+    if (accessLevel === 'supervisor' || accessLevel === 'seller') return 'vendedor.html';
+    if (accessLevel === 'support') return 'soporte.html';
+    if (accessLevel === 'hr') return 'staff.html';
+    if (accessLevel === 'installer' || accessLevel === 'trainer') return 'panel.html';
+    return 'login.html';
+  }
+
+  function redirectToLanding(accessLevel) {
+    if (!accessLevel || accessLevel === 'none') {
+      auth.logout();
+      return;
+    }
+    var landing = getLandingPage(accessLevel);
+    if (landing === 'login.html') {
+      auth.logout();
+      return;
+    }
+    var current = window.location.pathname.split('/').pop();
+    if (current !== landing) {
+      window.location.href = landing;
+    }
+  }
+
+  function enforcePageAccess(accessLevel) {
+    var required = document.body.dataset.access || '';
+    if (!required || required === 'login' || required === 'password' || required === 'general') return;
+    var allowedList = parseAccessList(required);
+    if (!allowedList.length) return;
+    if (!isAllowed(accessLevel, allowedList)) {
+      redirectToLanding(accessLevel);
+    }
+  }
+
+  async function blockSession(message) {
+    if (sessionBlockInProgress) return;
+    sessionBlockInProgress = true;
+    if (N.ui && N.ui.showToast && message) {
+      N.ui.showToast(message, 'error');
+    }
+    await auth.logout();
+  }
+
+  async function syncSessionWithState(source) {
+    if (sessionSyncInProgress) return;
+    if (!N.state || !N.state.session || !N.state.session.user) return;
+    if (!N.state.isReady) return;
+    if (!Array.isArray(N.state.users) || !N.state.users.length) return;
+
+    sessionSyncInProgress = true;
+    try {
+      var sessionUser = N.state.session.user;
+      var stateUser = getStateUser(sessionUser);
+      var sessionEmail = N.utils.normalizeEmail(sessionUser.email || '');
+      var isOwner = sessionEmail && N.config.MEGA_SUPERUSER_EMAILS.indexOf(sessionEmail) >= 0;
+
+      if (!stateUser && !isOwner) {
+        await blockSession('Tu acceso fue revocado.');
+        return;
+      }
+
+      if (stateUser) {
+        var status = getStateStatus(stateUser);
+        if (!isActiveStatus(status)) {
+          await blockSession('Tu acceso fue deshabilitado.');
+          return;
+        }
+      }
+
+      var stateRoles = stateUser ? N.utils.getUserRoles(stateUser) : [];
+      var sessionRoles = N.utils.getUserRoles(sessionUser);
+      var nextRoles = stateRoles.length ? stateRoles : sessionRoles;
+      var rolesChanged = !rolesMatch(nextRoles, sessionRoles);
+      var stateUserType = stateUser && stateUser.user_metadata ? stateUser.user_metadata.user_type : '';
+      var sessionUserType = sessionUser.user_metadata ? sessionUser.user_metadata.user_type : '';
+      var userTypeChanged = stateUserType && stateUserType !== sessionUserType;
+
+      if (rolesChanged || userTypeChanged) {
+        var meta = sessionUser.user_metadata || {};
+        var stateMeta = stateUser ? (stateUser.user_metadata || {}) : {};
+        meta.roles = nextRoles;
+        meta.role = N.roles ? N.roles.getPrimaryRole(nextRoles) : (nextRoles[0] || meta.role);
+        meta.user_type = stateMeta.user_type || meta.user_type || (nextRoles.indexOf('cliente') >= 0 ? 'cliente' : 'staff');
+        sessionUser.user_metadata = meta;
+      }
+
+      if (rolesChanged || userTypeChanged) {
+        var accessLevel = getAccessLevel(sessionUser);
+        N.state.session.accessLevel = accessLevel;
+        N.state.session.accessRoles = nextRoles;
+        N.state.session.primaryRole = N.roles ? N.roles.getPrimaryRole(nextRoles) : '';
+        updateSessionUI(sessionUser);
+        updateNavVisibility(accessLevel);
+        if (N.app && typeof N.app.refreshModules === 'function') {
+          N.app.refreshModules();
+        }
+        enforcePageAccess(accessLevel);
+      }
+    } finally {
+      sessionSyncInProgress = false;
+    }
+  }
+
   function handleAccessRedirect(accessLevel, requiredAccess) {
     if (!requiredAccess) return;
     if (requiredAccess === 'login' || requiredAccess === 'password') return;
@@ -119,21 +265,21 @@
     var allowedList = parseAccessList(requiredAccess);
     if (allowedList.length) {
       if (!isAllowed(accessLevel, allowedList)) {
-        auth.logout();
+        redirectToLanding(accessLevel);
       }
       return;
     }
 
     if (requiredAccess === 'super') {
       if (accessLevel !== 'manager' && accessLevel !== 'owner') {
-        auth.logout();
+        redirectToLanding(accessLevel);
       }
       return;
     }
 
     if (requiredAccess === 'seller') {
       if (accessLevel !== 'seller' && accessLevel !== 'supervisor' && accessLevel !== 'manager' && accessLevel !== 'owner') {
-        auth.logout();
+        redirectToLanding(accessLevel);
       }
     }
   }
@@ -165,6 +311,7 @@
         N.audit.log('user_login', { email: user.email });
       }
 
+      syncSessionWithState('auth');
       return;
     }
 
@@ -172,6 +319,7 @@
       setViewVisibility(false);
       updateSessionUI(null);
       N.state.session = null;
+      sessionBlockInProgress = false;
       if (N.data && typeof N.data.clearCache === 'function') {
         N.data.clearCache();
       }
@@ -213,6 +361,8 @@
     var allowed = parseAccessList(list);
     return isAllowed(accessLevel, allowed);
   };
+
+  auth.syncSessionWithState = syncSessionWithState;
 
   auth.recoverPassword = async function(email, rut) {
     if (!window.supabaseClient) return;
@@ -327,14 +477,36 @@
     if (!window.supabaseClient) return;
 
     window.supabaseClient.auth.onAuthStateChange(handleAuthStateChange);
+    document.addEventListener('state:updated', function() {
+      syncSessionWithState('state');
+    });
 
-    window.supabaseClient.auth.getSession().then(function(result) {
+    window.supabaseClient.auth.getSession().then(async function(result) {
+      var path = window.location.pathname.toLowerCase();
+      var isAuthPage = path.includes('login.html') || path.includes('crear-contrasena.html');
+
       if (result && result.data && result.data.session) {
+        try {
+          var userResult = await window.supabaseClient.auth.getUser();
+          if (!userResult || userResult.error || !userResult.data || !userResult.data.user) {
+            await window.supabaseClient.auth.signOut();
+            setViewVisibility(false);
+            if (!isAuthPage) {
+              window.location.href = 'login.html';
+            }
+            return;
+          }
+        } catch (_err) {
+          await window.supabaseClient.auth.signOut();
+          setViewVisibility(false);
+          if (!isAuthPage) {
+            window.location.href = 'login.html';
+          }
+          return;
+        }
         handleAuthStateChange('SESSION_RESTORE', result.data.session);
       } else {
         setViewVisibility(false);
-        var path = window.location.pathname.toLowerCase();
-        var isAuthPage = path.includes('login.html') || path.includes('crear-contrasena.html');
         if (!isAuthPage) {
           window.location.href = 'login.html';
         }
