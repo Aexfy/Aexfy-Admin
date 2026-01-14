@@ -37,6 +37,8 @@
     LOADING_GRACE_MS: 350,
     SHOW_LOADING: false,
     DEBUG_LOGS: false,
+    POLL_WHEN_REALTIME: true,
+    FOCUS_REFRESH_MS: 5000,
     CACHE_ENABLED: true,
     CACHE_KEY: 'aexfy_admin_cache',
     CACHE_TTL_MS: 300000
@@ -295,6 +297,8 @@
   N.data = {
     _realtimeChannel: null,
     _pollIntervalId: null,
+    _focusBound: false,
+    _lastRefreshAt: 0,
 
     withTimeout: function(promise, ms, label) {
       var timerId = null;
@@ -663,6 +667,7 @@
         } else {
           N.data.setupPolling();
         }
+        N.data.setupFocusRefresh();
       }
       return loadPromise;
     },
@@ -690,6 +695,9 @@
               clearInterval(N.data._pollIntervalId);
               N.data._pollIntervalId = null;
             }
+            if (N.config.POLL_WHEN_REALTIME) {
+              N.data.setupPolling();
+            }
           }
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             N.data.setupPolling();
@@ -702,6 +710,26 @@
       N.data._pollIntervalId = setInterval(function() {
         N.data.loadRemoteState();
       }, N.config.POLL_INTERVAL_MS);
+    },
+
+    setupFocusRefresh: function() {
+      if (N.data._focusBound) return;
+      N.data._focusBound = true;
+
+      function refreshOnFocus() {
+        var now = Date.now();
+        var minGap = N.config.FOCUS_REFRESH_MS || 0;
+        if (now - N.data._lastRefreshAt < minGap) return;
+        N.data._lastRefreshAt = now;
+        N.data.loadRemoteState({ silent: true });
+      }
+
+      window.addEventListener('focus', refreshOnFocus);
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') {
+          refreshOnFocus();
+        }
+      });
     }
   };
 })();
