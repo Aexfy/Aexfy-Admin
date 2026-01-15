@@ -273,6 +273,10 @@
       renderRoleOptions(modalForm.querySelector('[data-role-options]'), selectedRoles, allowedRoles);
       renderZoneOptions(modalForm.querySelector('[data-zone-options]'), selectedZones);
       updateZoneSection(modalForm, selectedRoles, selectedZones);
+      var zoneSection = modalForm.querySelector('[data-zone-section]');
+      if (zoneSection && shouldRequireZones(selectedRoles)) {
+        zoneSection.style.display = '';
+      }
       modalForm.addEventListener('change', function(event) {
         if (event.target && event.target.name === 'roles') {
           updateZoneSection(modalForm, collectRoles(modalForm));
