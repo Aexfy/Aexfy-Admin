@@ -393,8 +393,78 @@
     },
 
     applyState: function(nextState) {
-      N.state.companies = Array.isArray(nextState.companies) ? nextState.companies : [];
-      N.state.users = Array.isArray(nextState.users) ? nextState.users : [];
+      function isUuid(value) {
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+      }
+
+      function normalizeCompany(company) {
+        if (!company || typeof company !== 'object') return company;
+        var normalized = Object.assign({}, company);
+        if (!normalized.activity_code && normalized.actividad_economica) {
+          normalized.activity_code = normalized.actividad_economica;
+        }
+        if (!normalized.phone && normalized.telefono) {
+          normalized.phone = normalized.telefono;
+        }
+        if (!normalized.city && normalized.ciudad) {
+          normalized.city = normalized.ciudad;
+        }
+        if (!normalized.address && normalized.direccion) {
+          normalized.address = normalized.direccion;
+        }
+        delete normalized.actividad_economica;
+        delete normalized.telefono;
+        delete normalized.ciudad;
+        delete normalized.direccion;
+        if (!normalized.updated_at && normalized.created_at) {
+          normalized.updated_at = normalized.created_at;
+        }
+        return normalized;
+      }
+
+      function buildFullName(meta) {
+        var parts = [
+          meta.first_name,
+          meta.middle_name,
+          meta.last_name,
+          meta.mother_last_name
+        ].filter(Boolean);
+        return parts.join(' ');
+      }
+
+      function normalizeUser(user) {
+        if (!user || typeof user !== 'object') return user;
+        var normalized = Object.assign({}, user);
+        var meta = Object.assign({}, normalized.user_metadata || {});
+        if (Array.isArray(meta.roles) && meta.roles.length) {
+          meta.roles = meta.roles.map(function(role) {
+            return String(role || '').trim().toLowerCase();
+          }).filter(Boolean);
+        }
+        if (!Array.isArray(meta.roles) && meta.role) {
+          meta.roles = [String(meta.role).trim().toLowerCase()];
+        }
+        if (!meta.role && Array.isArray(meta.roles) && meta.roles.length) {
+          meta.role = meta.roles[0];
+        }
+        if (!meta.user_type) {
+          meta.user_type = Array.isArray(meta.roles) && meta.roles.indexOf('cliente') >= 0 ? 'cliente' : 'staff';
+        }
+        if (!meta.full_name) {
+          meta.full_name = buildFullName(meta);
+        }
+        normalized.user_metadata = meta;
+        if (!normalized.auth_id && normalized.id && isUuid(normalized.id)) {
+          normalized.auth_id = normalized.id;
+        }
+        if (!normalized.updated_at && normalized.created_at) {
+          normalized.updated_at = normalized.created_at;
+        }
+        return normalized;
+      }
+
+      N.state.companies = (Array.isArray(nextState.companies) ? nextState.companies : []).map(normalizeCompany);
+      N.state.users = (Array.isArray(nextState.users) ? nextState.users : []).map(normalizeUser);
       var meta = nextState.meta || {};
       N.state.meta = Object.assign({}, meta);
       N.state.meta.supportTemplates = Array.isArray(meta.supportTemplates) ? meta.supportTemplates : [];

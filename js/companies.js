@@ -141,6 +141,19 @@
     return (hasPlus ? '+' : '') + digits;
   }
 
+  function normalizeCompanyPayload(raw) {
+    var payload = Object.assign({}, raw || {});
+    payload.activity_code = String(payload.activity_code || payload.actividad_economica || '').trim();
+    payload.phone = normalizePhone(payload.phone || payload.telefono || '');
+    payload.city = String(payload.city || payload.ciudad || '').trim();
+    payload.address = String(payload.address || payload.direccion || '').trim();
+    delete payload.actividad_economica;
+    delete payload.telefono;
+    delete payload.ciudad;
+    delete payload.direccion;
+    return payload;
+  }
+
   function bindRutInput(form) {
     var rutInput = form.querySelector('[name="rut"]');
     if (!rutInput) return;
@@ -208,13 +221,13 @@
         name: company.name || '',
         rut: company.rut ? normalizeRut(company.rut) : '',
         giro: company.giro || '',
-        actividad_economica: company.actividad_economica || '',
+        actividad_economica: company.activity_code || company.actividad_economica || '',
         email_tributario: company.email_tributario || '',
-        telefono: company.telefono ? N.utils.formatPhone(company.telefono) : '',
+        telefono: company.phone ? N.utils.formatPhone(company.phone) : (company.telefono ? N.utils.formatPhone(company.telefono) : ''),
         region: company.region || '',
-        ciudad: company.ciudad || '',
+        ciudad: company.city || company.ciudad || '',
         comuna: company.comuna || '',
-        direccion: company.direccion || '',
+        direccion: company.address || company.direccion || '',
         plan: company.plan || 'starter',
         status: company.status || 'active',
         owner_email: company.owner_email || '',
@@ -275,14 +288,15 @@
 
       data.name = String(data.name || '').trim();
       data.giro = String(data.giro || '').trim();
-      data.actividad_economica = String(data.actividad_economica || '').trim();
+      data.activity_code = String(data.activity_code || data.actividad_economica || '').trim();
       data.email_tributario = N.utils.normalizeEmail(data.email_tributario);
-      data.telefono = normalizePhone(data.telefono);
+      data.phone = normalizePhone(data.phone || data.telefono);
       data.region = String(data.region || '').trim();
-      data.ciudad = String(data.ciudad || '').trim();
+      data.city = String(data.city || data.ciudad || '').trim();
       data.comuna = String(data.comuna || '').trim();
-      data.direccion = String(data.direccion || '').trim();
+      data.address = String(data.address || data.direccion || '').trim();
       data.rut = normalizeRut(data.rut);
+      data = normalizeCompanyPayload(data);
 
       var zonePrefix = getZonePrefix(data.region);
       if (!zonePrefix) {
@@ -320,11 +334,16 @@
         if (index >= 0) {
           var currentCompany = N.state.companies[index];
           var companyCode = ensureCompanyCode(currentCompany, data.region, data.id);
-          N.state.companies[index] = Object.assign({}, N.state.companies[index], data, {
+          var updatedCompany = Object.assign({}, N.state.companies[index], data, {
             modules: modules,
             company_code: companyCode,
             updated_at: N.utils.nowISO()
           });
+          delete updatedCompany.actividad_economica;
+          delete updatedCompany.telefono;
+          delete updatedCompany.ciudad;
+          delete updatedCompany.direccion;
+          N.state.companies[index] = updatedCompany;
           N.audit.log('company_update', { id: data.id, name: data.name });
         }
       } else {
@@ -461,20 +480,21 @@
   }
 
   async function handleApproveRequest(requestId, button) {
-    var request = getRequests().find(function(item) { return item.id === requestId; });
+      var request = getRequests().find(function(item) { return item.id === requestId; });
     if (!request || request.status !== 'pending') return;
     var unlock = N.utils.lockButton(button);
     if (!unlock) return;
 
     try {
-      var payload = request.payload || {};
+      var payload = normalizeCompanyPayload(request.payload || {});
       var newCompany = Object.assign({}, payload, {
         id: N.utils.uid('co'),
         company_code: getNextCompanyCode(payload.region || ''),
         plan: payload.plan || 'starter',
         status: payload.status || 'pending',
         modules: Array.isArray(payload.modules) ? payload.modules : [],
-        created_at: N.utils.nowISO()
+        created_at: N.utils.nowISO(),
+        updated_at: N.utils.nowISO()
       });
       N.state.companies.push(newCompany);
       await inviteCompanyOwner(payload, newCompany);

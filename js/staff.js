@@ -397,7 +397,8 @@
           email: data.email || user.email || '',
           status: data.status || 'active',
           user_metadata: payload,
-          created_at: N.utils.nowISO()
+          created_at: N.utils.nowISO(),
+          updated_at: N.utils.nowISO()
         };
         N.state.users.push(newStaff);
         N.audit.log('staff_create', { id: newStaff.id, email: newStaff.email });

@@ -754,7 +754,8 @@
           email: data.email || user.email || '',
           status: data.status || 'active',
           user_metadata: userPayload,
-          created_at: N.utils.nowISO()
+          created_at: N.utils.nowISO(),
+          updated_at: N.utils.nowISO()
         };
         N.state.users.push(newUser);
         N.audit.log('user_create', { id: newUser.id, email: newUser.email });
