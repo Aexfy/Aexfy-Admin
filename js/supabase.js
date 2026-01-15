@@ -27,6 +27,24 @@
     return;
   }
 
+  function looksLikeServiceRole(key) {
+    if (!key || typeof key !== 'string') return false;
+    var parts = key.split('.');
+    if (parts.length < 2) return false;
+    try {
+      var payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      var decoded = atob(payload);
+      return decoded.indexOf('service_role') >= 0;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  if (looksLikeServiceRole(supabaseKey)) {
+    logDebug('Supabase key invalida: no uses service_role en el cliente.');
+    return;
+  }
+
   window.supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey, {
     auth: {
       persistSession: true,
