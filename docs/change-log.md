@@ -5,3 +5,4 @@ Formato
 
 Entradas
 - 2026-01-14 | 0.1.0 | Plantillas iniciales de marco ISO | Aexfy
+- 2026-01-15 | 0.1.1 | Docs en espanol y marcas de cumplimiento (Listo) | Aexfy
