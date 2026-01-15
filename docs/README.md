@@ -26,6 +26,9 @@ Documentos
 - traceability-matrix.md: matriz de trazabilidad.
 - operational-runbook.md: operaciones, monitoreo, backup y recovery.
 - change-log.md: registro de cambios.
+- release-notes.md: notas de version por release.
+- nonconformity-log.md: registro de no conformidades.
+- quality-review.md: revision trimestral de calidad.
 - risk-register.md: registro de riesgos.
 - required-docs.md: lista minima de documentacion.
 
