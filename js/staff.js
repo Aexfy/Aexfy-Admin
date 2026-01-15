@@ -21,6 +21,14 @@
     { value: 'rrhh', label: 'RRHH' }
   ];
 
+  var DEFAULT_ZONES = [
+    { id: 'NG', label: 'Zona 1 - Norte Grande' },
+    { id: 'NC', label: 'Zona 2 - Norte Chico' },
+    { id: 'CT', label: 'Zona 3 - Centro' },
+    { id: 'SR', label: 'Zona 4 - Sur' },
+    { id: 'AU', label: 'Zona 5 - Austral' }
+  ];
+
   function canManage() {
     var level = N.state.session && N.state.session.accessLevel;
     return level === 'owner' || level === 'manager' || level === 'hr';
@@ -40,6 +48,147 @@
     return allowed.filter(function(role) {
       return ROLE_OPTIONS.some(function(option) { return option.value === role; });
     });
+  }
+
+  function getZoneOptions() {
+    var options = N.utils.getZoneOptions ? N.utils.getZoneOptions() : [];
+    if (!options || !options.length) return DEFAULT_ZONES;
+    return options;
+  }
+
+  function shouldRequireZones(roles) {
+    if (!Array.isArray(roles)) return false;
+    var required = N.config.ZONE_ROLES || [];
+    return roles.some(function(role) { return required.indexOf(role) >= 0; });
+  }
+
+  function renderZoneOptions(container, selectedZones) {
+    if (!container) return;
+    var options = getZoneOptions();
+    var selected = N.utils.normalizeZones(selectedZones || []);
+    if (!options.length) {
+      container.innerHTML = '<div class="text-muted">Sin zonas disponibles.</div>';
+      return;
+    }
+    container.innerHTML = options.map(function(option) {
+      var checked = selected.indexOf(option.id) >= 0 ? ' checked' : '';
+      return (
+        '<label class="role-chip">' +
+          '<input type="checkbox" name="zones" value="' + option.id + '"' + checked + '>' +
+          '<span>' + option.label + '</span>' +
+        '</label>'
+      );
+    }).join('');
+  }
+
+  function collectZones(form) {
+    if (!form) return [];
+    var zones = [];
+    form.querySelectorAll('input[name="zones"]:checked').forEach(function(input) {
+      zones.push(input.value);
+    });
+    return N.utils.normalizeZones(zones);
+  }
+
+  function updateZoneSection(form, roles, selectedZones, forceShow) {
+    if (!form) return;
+    var section = form.querySelector('[data-zone-section]');
+    if (!section) return;
+    var needsZones = shouldRequireZones(roles);
+    var shouldShow = forceShow || needsZones;
+    section.style.display = shouldShow ? '' : 'none';
+    var container = form.querySelector('[data-zone-options]');
+    if (container) {
+      if (shouldShow) {
+        renderZoneOptions(container, selectedZones || collectZones(form));
+      } else {
+        container.innerHTML = '';
+      }
+    }
+    if (!needsZones) {
+      form.querySelectorAll('input[name="zones"]').forEach(function(input) {
+        input.checked = false;
+      });
+    }
+  }
+
+  function renderZoneBoard() {
+    var board = N.utils.$('[data-zone-board]');
+    var columnsContainer = N.utils.$('[data-zone-columns]');
+    if (!board || !columnsContainer) return;
+    var allowed = canManage();
+    board.style.display = '';
+
+    var options = getZoneOptions();
+    var unassigned = { id: '__none__', label: 'Sin zona' };
+    var zones = [unassigned].concat(options);
+
+    var staffList = getStaffList();
+
+    var cardsByZone = {};
+    zones.forEach(function(z) { cardsByZone[z.id] = []; });
+
+    staffList.forEach(function(user) {
+      var userZones = N.utils.getUserZones ? N.utils.getUserZones(user) : [];
+      var target = userZones && userZones.length ? userZones[0] : '__none__';
+      if (!cardsByZone[target]) cardsByZone[target] = [];
+      cardsByZone[target].push(user);
+    });
+
+    columnsContainer.innerHTML = zones.map(function(zone) {
+      var users = cardsByZone[zone.id] || [];
+      var cards = users.map(function(u) {
+        var name = (u.user_metadata && u.user_metadata.full_name) || u.email || 'Sin nombre';
+        return (
+          '<div class="zone-card' + (allowed ? '' : ' is-disabled') + '" ' +
+            (allowed ? 'draggable="true"' : '') +
+            ' data-user-id="' + (u.id || '') + '">' +
+            '<div class="zone-card-title">' + N.utils.escapeHtml(name) + '</div>' +
+            '<div class="zone-card-sub">' + N.utils.getRoleLabel(N.utils.getUserRoles(u)) + '</div>' +
+          '</div>'
+        );
+      }).join('');
+      return (
+        '<div class="zone-column" data-zone-id="' + zone.id + '">' +
+          '<div class="zone-column-header">' + N.utils.escapeHtml(zone.label) + '</div>' +
+          '<div class="zone-column-body" data-drop-zone="true">' + cards + '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    if (allowed) {
+      columnsContainer.querySelectorAll('.zone-card').forEach(function(card) {
+        card.addEventListener('dragstart', function(e) {
+          e.dataTransfer.setData('text/plain', card.getAttribute('data-user-id') || '');
+        });
+      });
+
+      columnsContainer.querySelectorAll('[data-drop-zone]').forEach(function(zoneEl) {
+        zoneEl.addEventListener('dragover', function(e) { e.preventDefault(); });
+        zoneEl.addEventListener('drop', function(e) {
+          e.preventDefault();
+          var userId = e.dataTransfer.getData('text/plain');
+          var parentCol = e.currentTarget.closest('[data-zone-id]');
+          var zoneId = parentCol ? parentCol.getAttribute('data-zone-id') : '__none__';
+          handleZoneDrop(userId, zoneId === '__none__' ? [] : [zoneId]);
+        });
+      });
+    }
+  }
+
+  async function handleZoneDrop(userId, zones) {
+    if (!userId) return;
+    var index = N.state.users.findIndex(function(u) { return u.id === userId; });
+    if (index < 0) return;
+    var user = N.state.users[index];
+    var meta = user.user_metadata || {};
+    meta.zones = N.utils.normalizeZones(zones || []);
+    user.user_metadata = meta;
+    user.updated_at = N.utils.nowISO();
+    N.audit.log('staff_zone_assign', { id: user.id, zones: meta.zones });
+    await N.data.saveState();
+    render();
+    renderZoneBoard();
   }
 
   function sanitizeNameValue(value) {
@@ -128,7 +277,8 @@
   }
 
   function getStaffList() {
-    return N.state.users.filter(isStaffUser);
+    var list = N.state.users.filter(isStaffUser);
+    return N.utils.filterUsersByAccess(list);
   }
 
   function renderRoleOptions(container, selectedRoles, allowedRoles) {
@@ -171,6 +321,7 @@
     if (!form) return;
 
     var selectedRoles = isEditing ? N.utils.getUserRoles(user) : [];
+    var selectedZones = isEditing ? N.utils.getUserZones(user) : [];
     var allowedRoles = getAllowedRoleOptions();
     var prefill = null;
 
@@ -210,6 +361,17 @@
       bindRutInput(modalForm);
       lockStaffType(modalForm);
       renderRoleOptions(modalForm.querySelector('[data-role-options]'), selectedRoles, allowedRoles);
+      renderZoneOptions(modalForm.querySelector('[data-zone-options]'), selectedZones);
+      var zoneSection = modalForm.querySelector('[data-zone-section]');
+      if (zoneSection) {
+        zoneSection.style.display = '';
+      }
+      updateZoneSection(modalForm, selectedRoles, selectedZones, true);
+      modalForm.addEventListener('change', function(event) {
+        if (event.target && event.target.name === 'roles') {
+          updateZoneSection(modalForm, collectRoles(modalForm), collectZones(modalForm), true);
+        }
+      });
       if (prefill) {
         var setValue = function(name, value) {
           var input = modalForm.querySelector('[name="' + name + '"]');
@@ -242,7 +404,7 @@
     return roles;
   }
 
-  function getStaffPayload(data, roles, primaryRole) {
+  function getStaffPayload(data, roles, primaryRole, zones) {
     return {
       first_name: sanitizeNameValue(data.first_name),
       middle_name: sanitizeNameValue(data.middle_name),
@@ -252,7 +414,8 @@
       rut: data.rut || '',
       user_type: 'staff',
       roles: roles,
-      role: primaryRole
+      role: primaryRole,
+      zones: N.utils.normalizeZones(zones || [])
     };
   }
 
@@ -282,13 +445,13 @@
     }
   }
 
-  async function createRemoteUser(data, roles, primaryRole) {
+  async function createRemoteUser(data, roles, primaryRole, zones) {
     if (!window.supabaseClient) throw new Error('Supabase no disponible');
 
     var payload = {
       email: data.email,
       roles: roles,
-      metadata: getStaffPayload(data, roles, primaryRole),
+      metadata: getStaffPayload(data, roles, primaryRole, zones),
       user_type: 'staff',
       redirectTo: getPasswordRedirectUrl()
     };
@@ -335,6 +498,7 @@
     data.user_type = 'staff';
     var roles = collectRoles(form);
     var primaryRole = N.roles ? N.roles.getPrimaryRole(roles) : roles[0];
+    var zones = collectZones(form);
 
     data.first_name = sanitizeNameValue(data.first_name);
     data.middle_name = sanitizeNameValue(data.middle_name);
@@ -355,6 +519,16 @@
       return;
     }
 
+    if (shouldRequireZones(roles) && !zones.length) {
+      setFormError(form, 'Selecciona al menos una zona.');
+      unlock();
+      return;
+    }
+
+    if (!shouldRequireZones(roles)) {
+      zones = [];
+    }
+
     if (!isValidEmail(data.email)) {
       setFormError(form, 'Ingresa un email valido.');
       unlock();
@@ -367,7 +541,7 @@
         if (index >= 0) {
           var current = N.state.users[index];
           var existing = current.user_metadata || {};
-          current.user_metadata = Object.assign({}, existing, getStaffPayload(data, roles, primaryRole));
+          current.user_metadata = Object.assign({}, existing, getStaffPayload(data, roles, primaryRole, zones));
           current.status = data.status || 'active';
           current.updated_at = N.utils.nowISO();
           N.audit.log('staff_update', { id: current.id, email: current.email });
@@ -378,12 +552,12 @@
         return;
       }
 
-      var result = await createRemoteUser(data, roles, primaryRole);
+      var result = await createRemoteUser(data, roles, primaryRole, zones);
       var existing = result && result.existing;
       var existingStaff = N.state.users.find(function(item) {
         return N.utils.normalizeEmail(item.email) === N.utils.normalizeEmail(data.email);
       });
-      var payload = getStaffPayload(data, roles, primaryRole);
+      var payload = getStaffPayload(data, roles, primaryRole, zones);
       if (existing && existingStaff) {
         existingStaff.user_metadata = Object.assign({}, existingStaff.user_metadata || {}, payload);
         existingStaff.status = data.status || existingStaff.status || 'active';
@@ -473,6 +647,8 @@
         message: 'No hay miembros de staff registrados.'
       }
     });
+
+    renderZoneBoard();
   }
 
   function handleSearch(event) {
@@ -533,6 +709,9 @@
     document.addEventListener('state:updated', function() {
       render();
     });
+
+    // Render inicial para que el tablero de zonas y la tabla aparezcan aun antes de eventos.
+    render();
   };
 
   staff.render = render;

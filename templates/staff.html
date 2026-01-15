@@ -65,6 +65,14 @@
         </div>
 
         <div id="staff-list"></div>
+
+        <div class="card" id="zone-board-card" data-zone-board style="margin-top: 16px;">
+          <div class="card-header">
+            <h3>Zonas</h3>
+            <p class="text-muted">Arrastra y suelta miembros para asignar zonas.</p>
+          </div>
+          <div class="zone-board" data-zone-columns></div>
+        </div>
       </section>
     </main>
   </div>
@@ -104,6 +112,11 @@
       <div class="form-group" data-role-section>
         <label>Rol</label>
         <div class="role-grid" data-role-options></div>
+      </div>
+      <div class="form-group" data-zone-section style="display: none;">
+        <label>Zonas</label>
+        <div class="role-grid" data-zone-options></div>
+        <div class="text-muted">Selecciona una o mas zonas.</div>
       </div>
       <div class="form-group" data-request-hide>
         <label>Estado</label>
