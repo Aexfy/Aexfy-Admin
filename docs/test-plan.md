@@ -1,32 +1,32 @@
-# Test Plan
+﻿# Plan de pruebas
 
-Scope
-- Functional, security, performance, and regression tests.
+Alcance
+- Pruebas funcionales, seguridad, performance y regresion.
 
-Test types
-- Unit: utility functions and validators.
-- Integration: Supabase Auth, Edge Functions, DB.
-- E2E: login, role access, CRUD, approvals.
-- Performance: state load p95/p99.
-- Security: access control, injection, session handling.
+Tipos de prueba
+- Unitarias: utilidades y validadores.
+- Integracion: Supabase Auth, Edge Functions, DB.
+- E2E: login, acceso por rol, CRUD, aprobaciones.
+- Performance: carga de estado p95/p99.
+- Seguridad: control de acceso, inyeccion, manejo de sesion.
 
-Entry criteria
-- Requirements defined and approved.
-- Environments ready (dev/stage).
+Criterios de entrada
+- Requisitos definidos y aprobados.
+- Ambientes listos (dev/stage).
 
-Exit criteria
-- All critical tests pass.
-- No high severity defects open.
+Criterios de salida
+- Todas las pruebas criticas pasan.
+- Sin defectos de severidad alta abiertos.
 
-Test matrix (sample)
-- TC-01 Login valid
-- TC-02 Login invalid
-- TC-03 Role change updates access
-- TC-04 Disable user blocks session
-- TC-05 Create company with SII fields
-- TC-06 Invite user email sent
-- TC-07 Delete user removes Auth access
+Matriz de pruebas (ejemplo)
+- TC-01 Login valido
+- TC-02 Login invalido
+- TC-03 Cambio de rol actualiza acceso
+- TC-04 Deshabilitar usuario bloquea sesion
+- TC-05 Crear empresa con campos SII
+- TC-06 Invitacion de usuario enviada
+- TC-07 Eliminar usuario quita acceso Auth
 
-Evidence
-- Screenshots or logs per test.
-- CI artifacts for automated runs.
+Evidencia
+- Capturas o logs por prueba.
+- Artefactos de CI para ejecuciones automaticas.

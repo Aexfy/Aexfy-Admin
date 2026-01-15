@@ -1,24 +1,24 @@
-# Operational Runbook
+﻿# Manual operativo
 
-Monitoring
-- Check Supabase Auth status, Edge Function logs, and DB health.
-- Review audit log for critical actions.
+Monitoreo
+- Revisar estado de Supabase Auth, logs de Edge Functions y salud de DB.
+- Revisar audit log de acciones criticas.
 
-Backups and recovery
-- Daily backups with retention >= 30 days.
-- Quarterly restore test.
+Backups y recovery
+- Backups diarios con retencion >= 30 dias.
+- Prueba de restauracion trimestral.
 
-Key rotation
-- Rotate service role keys every 90 days.
-- Update Supabase secrets and redeploy functions.
+Rotacion de llaves
+- Rotar service role key cada 90 dias.
+- Actualizar secrets en Supabase y redeploy de functions.
 
-Incident response
-- Identify impact and scope.
-- Disable compromised users.
-- Collect logs and evidence.
-- Post-incident report with actions.
+Respuesta a incidentes
+- Identificar impacto y alcance.
+- Deshabilitar usuarios comprometidos.
+- Recopilar logs y evidencia.
+- Post-incident report con acciones.
 
-Operational checks
-- Verify GitHub Pages deployment on each release.
-- Validate URL allow list for auth redirects.
-- Verify Edge Functions permissions.
+Chequeos operativos
+- Verificar despliegue de GitHub Pages en cada release.
+- Validar allow list de URLs para redirects de Auth.
+- Verificar permisos de Edge Functions.

@@ -1,43 +1,43 @@
-# ISO/IEC 25010 Checklist
+﻿# Checklist ISO/IEC 25010
 
-Functional suitability
-- [ ] All critical flows documented and implemented
-- [ ] Validation on inputs and business rules
-- [ ] Edge functions return consistent error codes
-Evidence: links to SRS, tests
+Adecuacion funcional
+- [ ] Flujos criticos documentados e implementados
+- [ ] Validacion de entradas y reglas de negocio
+- [ ] Edge Functions retornan codigos de error consistentes
+Evidencia: enlaces a SRS, pruebas
 
-Performance efficiency
-- [ ] State load p95 <= target
-- [ ] Caching enabled and validated
-- [ ] No blocking UI on background loads
-Evidence: performance report
+Eficiencia de desempeno
+- [ ] Carga de estado p95 <= objetivo
+- [ ] Cache habilitada y validada
+- [ ] UI no bloquea en cargas de fondo
+Evidencia: reporte de performance
 
-Usability
-- [ ] Forms show clear errors
-- [ ] Labels and actions are consistent
-- [ ] Accessibility basic checks (labels, focus)
-Evidence: UX review notes
+Usabilidad
+- [ ] Formularios muestran errores claros
+- [ ] Etiquetas y acciones consistentes
+- [ ] Accesibilidad basica (labels, foco)
+Evidencia: notas de UX
 
-Reliability
-- [ ] No console errors in normal flows
-- [ ] Fallback to table when Edge fails
-- [ ] Retry/backoff for transient failures
-Evidence: test logs
+Fiabilidad
+- [ ] Sin errores de consola en flujos normales
+- [x] Fallback a tabla cuando Edge falla 👍
+- [ ] Retry/backoff para fallas transitorias
+Evidencia: logs de pruebas
 
-Security
-- [ ] RBAC enforced on UI and data
-- [ ] TLS enforced, no secrets in client
-- [ ] Audit log for critical actions
-Evidence: security review
+Seguridad
+- [x] RBAC en UI y datos 👍
+- [x] TLS y sin secretos en el cliente 👍
+- [x] Auditoria de acciones criticas 👍
+Evidencia: revision de seguridad
 
-Maintainability
-- [ ] Modular JS and clear naming
-- [ ] Linting rules applied
-- [ ] Test coverage for core logic
-Evidence: CI results
+Mantenibilidad
+- [x] JS modular y naming claro 👍
+- [ ] Reglas de linting aplicadas
+- [ ] Cobertura de pruebas en logica core
+Evidencia: resultados CI
 
-Portability
-- [ ] Static hosting compatible
-- [ ] Works in Chrome/Edge/Firefox
-- [ ] No platform specific dependencies
-Evidence: browser test matrix
+Portabilidad
+- [x] Compatible con hosting estatico 👍
+- [ ] Funciona en Chrome/Edge/Firefox
+- [x] Sin dependencias especificas de plataforma 👍
+Evidencia: matriz de navegadores

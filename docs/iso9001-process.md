@@ -1,26 +1,26 @@
-# ISO 9001 Process Framework
+﻿# Marco de procesos ISO 9001
 
-Process map
-- Plan: define requirements, risks, acceptance criteria.
-- Do: implement features with coding standards and reviews.
-- Check: test, verify, and validate results.
-- Act: apply corrective actions and continuous improvement.
+Mapa de procesos
+- Plan: definir requisitos, riesgos, criterios de aceptacion.
+- Do: implementar funcionalidades con estandares y revisiones.
+- Check: probar, verificar y validar resultados.
+- Act: aplicar acciones correctivas y mejora continua.
 
 Roles
-- Product owner: requirements and acceptance.
-- Tech lead: architecture and code quality.
-- QA lead: test plan and evidence.
-- Security lead: controls and risk management.
+- Responsable de producto: requisitos y aceptacion.
+- Lider tecnico: arquitectura y calidad de codigo.
+- Lider QA: plan de pruebas y evidencia.
+- Lider de seguridad: controles y gestion de riesgos.
 
-Change control
-- All changes via pull request.
-- Required review and test evidence.
-- Release notes with version.
+Control de cambios
+- Todos los cambios via pull request.
+- Revision obligatoria y evidencia de pruebas.
+- Notas de version por version.
 
-Nonconformity handling
-- Log issue, root cause analysis, corrective action.
-- Track to closure and verify.
+Manejo de no conformidades
+- Registrar issue, analisis de causa raiz, accion correctiva.
+- Seguir hasta cierre y verificar.
 
-Continuous improvement
-- Quarterly review of defects, incidents, and metrics.
-- Update standards and templates as needed.
+Mejora continua
+- Revision trimestral de defectos, incidentes y metricas.
+- Actualizar estandares y plantillas segun necesidad.

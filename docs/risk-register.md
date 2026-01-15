@@ -1,7 +1,7 @@
-# Risk Register
+﻿# Registro de riesgos
 
-| Risk ID | Description | Impact | Likelihood | Mitigation | Owner | Status |
+| ID Riesgo | Descripcion | Impacto | Probabilidad | Mitigacion | Owner | Estado |
 |---|---|---|---|---|---|---|
-| R-01 | Unauthorized access via role misconfig | High | Medium | RBAC, audits, access reviews | Security | Open |
-| R-02 | Data loss from mis-save | High | Low | Backups, restore tests | Ops | Open |
-| R-03 | Invite link misuse | Medium | Low | Token expiry, UID validation | Security | Open |
+| R-01 | Acceso no autorizado por mala configuracion de roles | Alto | Medio | RBAC, auditorias, revisiones de acceso 👍 | Security | Abierto |
+| R-02 | Perdida de datos por guardado incorrecto | Alto | Bajo | Backups, pruebas de restauracion | Ops | Abierto |
+| R-03 | Mal uso del link de invitacion | Medio | Bajo | Expiracion de token, validacion de UID | Security | Abierto |

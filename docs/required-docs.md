@@ -1,17 +1,17 @@
-# Required Technical Documentation
+﻿# Documentacion tecnica requerida
 
-Minimum set
-- Requirements specification (SRS)
-- Architecture and data flow
-- Data model and data dictionary
-- Security plan and SoA
-- Test plan and evidence
-- Traceability matrix
-- Change log and release notes
-- Operational runbook
-- Risk register
+Set minimo
+- Especificacion de requisitos (SRS) 👍
+- Arquitectura y flujo de datos 👍
+- Modelo de datos y diccionario 👍
+- Plan de seguridad y SoA 👍
+- Plan de pruebas y evidencia
+- Matriz de trazabilidad 👍
+- Registro de cambios y notas de version 👍
+- Runbook operacional 👍
+- Registro de riesgos 👍
 
-Optional but recommended
-- SLA/SLO definitions
-- Capacity plan
-- Pen test report
+Opcional pero recomendado
+- Definicion de SLA/SLO
+- Plan de capacidad
+- Informe de pentest

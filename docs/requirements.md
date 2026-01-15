@@ -1,57 +1,58 @@
-# Requirements (SRS)
+﻿# Requisitos (SRS)
 
-Scope
-- Product: Aexfy Admin portal.
-- Stack: HTML/CSS/JS (no build), Supabase Auth/DB/Edge Functions.
+Alcance
+- Producto: Aexfy Admin.
+- Stack: HTML/CSS/JS (sin build), Supabase Auth/DB/Edge Functions.
 
-Functional requirements
-FR-01 Auth
-- Users can login with email and password.
-- Sessions are validated against Auth and revoked users are blocked.
+Requisitos funcionales
+FR-01 Autenticacion
+- Login con email y contrasena. 👍
+- Sesion validada contra Auth, usuarios revocados bloqueados. 👍
 
-FR-02 Roles and access
-- Roles define allowed modules and actions.
-- Access is enforced per page and per action.
-- Changing roles updates access without manual reload.
+FR-02 Roles y acceso
+- Roles definen modulos y acciones permitidas. 👍
+- Acceso por pagina y por accion. 👍
+- Cambio de rol actualiza acceso sin reload manual. 👍
 
-FR-03 State management
-- State is stored in aexfy_admin_state.
-- Edge function admin-state is primary read/write path.
-- Fallback to table when Edge fails.
+FR-03 Gestion de estado
+- Estado en aexfy_admin_state. 👍
+- Edge Function admin-state como via principal. 👍
+- Fallback a tabla cuando falla Edge. 👍
 
-FR-04 Users
-- Create, edit, disable, delete users.
-- Invite flow sends password creation email.
-- Client role requires company association.
+FR-04 Usuarios
+- CRUD de usuarios. 👍
+- Invitacion por email para crear contrasena. 👍
+- Rol cliente requiere empresa asociada. 👍
 
 FR-05 Staff
-- Staff management with role assignments.
-- Status can be set to active or disabled.
+- Gestion de staff con asignacion de roles. 👍
+- Estado activo/deshabilitado. 👍
 
-FR-06 Companies
-- Company CRUD with SII fields.
-- Company IDs prefixed by zone.
-- Owner invite as client.
+FR-06 Empresas
+- CRUD con campos SII. 👍
+- ID por zona. 👍
+- Invitacion de owner como cliente. 👍
 
-FR-07 Audit
-- Critical actions are logged (create, update, delete).
+FR-07 Auditoria
+- Registro de acciones criticas. 👍
 
-Non-functional requirements (ISO/IEC 25010)
-- Functional suitability: 100% of critical flows available.
-- Performance: p95 < 1.5s for state load on broadband.
-- Usability: consistent UI, clear errors, accessible forms.
-- Reliability: no console errors in normal flows.
-- Security: RBAC, encrypted transport, least privilege.
-- Maintainability: modular JS, clear naming, tests.
-- Portability: works in modern browsers, static hosting.
+Requisitos no funcionales (ISO/IEC 25010)
+- Adecuacion funcional: flujos criticos disponibles.
+- Rendimiento: p95 <= objetivo definido.
+- Usabilidad: UI consistente y mensajes claros.
+- Fiabilidad: fallback y manejo de errores.
+- Seguridad: RBAC, TLS, secretos fuera del cliente. 👍
+- Mantenibilidad: modularidad y naming consistente. 👍
+- Portabilidad: hosting estatico. 👍
+- Portabilidad: navegadores modernos.
 
-Constraints
-- No service_role key in client.
-- All admin operations via Edge Functions.
-- UI in Spanish, ASCII text only in files.
+Restricciones
+- Sin service role en cliente. 👍
+- Acciones admin via Edge Functions. 👍
+- UI en espanol y archivos ASCII.
 
-Acceptance criteria
-- Login -> panel -> logout works.
-- Disabled user is blocked and session ends.
-- Role changes update page access in real time.
-- State persists across reloads.
+Criterios de aceptacion
+- Login -> panel -> logout funciona. 👍
+- Usuario deshabilitado no puede acceder. 👍
+- Roles cambian acceso y navegacion. 👍
+- Estado persiste tras recargar. 👍

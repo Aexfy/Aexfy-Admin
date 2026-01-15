@@ -1,16 +1,16 @@
-# Architecture
+﻿# Arquitectura
 
-Overview
-- Frontend: static HTML/CSS/JS hosted on GitHub Pages.
+Resumen
+- Frontend: HTML/CSS/JS estatico en GitHub Pages.
 - Backend: Supabase Auth, Postgres, Edge Functions.
-- Security: RBAC, session checks, audit logging, TLS.
+- Seguridad: RBAC, control de sesion, auditoria, TLS.
 
-Component view (logical)
+Vista de componentes (logica)
 
-[Browser]
+[Navegador]
   |  HTML/JS/CSS
   v
-[Static Hosting]
+[Hosting estatico]
   |  JS SDK
   v
 [Supabase Auth] <-> [Postgres]
@@ -21,51 +21,51 @@ Component view (logical)
       - admin-create-user
       - admin-user-action
 
-Key data stores
-- public.aexfy_admin_state: central state (companies, users, meta).
-- auth.users: authentication and user metadata.
+Almacenamiento principal
+- public.aexfy_admin_state: estado central (companies, users, meta).
+- auth.users: autenticacion y metadata de usuario.
 
-Key data flows
+Flujos clave
 1) Login
-- Browser -> Supabase Auth signInWithPassword
-- Session stored in browser
-- Auth claims used to load state and set access
+- Navegador -> Supabase Auth signInWithPassword
+- Sesion en el navegador
+- Claims usados para acceso y estado
 
-2) Load state
-- Browser -> Edge Function admin-state (Bearer token)
-- Fallback to aexfy_admin_state table
-- Cache in sessionStorage
+2) Carga de estado
+- Navegador -> Edge Function admin-state (Bearer token) 👍
+- Fallback a tabla aexfy_admin_state 👍
+- Cache en sessionStorage 👍
 
-3) Create user
-- Browser -> admin-create-user
-- Function uses service role key
-- Writes to auth.users and returns invite link
-- UI persists user in aexfy_admin_state
+3) Crear usuario
+- Navegador -> admin-create-user 👍
+- Function usa service role key
+- Escribe en auth.users y retorna invitacion 👍
+- UI persiste en aexfy_admin_state 👍
 
-4) Delete or disable user
-- Browser -> admin-user-action
-- Function deletes or bans auth user
-- UI removes user from aexfy_admin_state
-- Session sync revokes access if status is not active
+4) Eliminar o deshabilitar usuario
+- Navegador -> admin-user-action 👍
+- Function elimina o banea en Auth 👍
+- UI actualiza aexfy_admin_state 👍
+- Sesion se bloquea si estado != activo 👍
 
-Deployment
+Despliegue
 - Frontend: GitHub Pages (prod)
-- Supabase: Project with Auth, DB, Edge Functions
+- Supabase: proyecto con Auth, DB, Edge Functions
 - Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, INVITE_REDIRECT_URL
 
-Scalability
-- Stateless front-end
-- Edge Functions for privileged actions
-- Postgres as system of record
-- Optional caching for read-heavy pages
+Escalabilidad
+- Front-end sin estado
+- Edge Functions para operaciones privilegiadas 👍
+- Postgres como fuente de verdad
+- Cache para lecturas frecuentes 👍
 
-Maintainability
-- Modular JS files by feature
-- Central core state and utilities
-- Clear separation of UI, data, and auth
+Mantenibilidad
+- Modulos JS por feature 👍
+- Estado y utilidades centralizadas
+- Separacion UI, data y auth 👍
 
-Security by design
-- No service role key in client
-- All admin actions via Edge Functions
-- Role-based access control and page gating
-- Audit log for critical actions
+Seguridad por diseno
+- Service role fuera del cliente 👍
+- Acciones admin via Edge Functions 👍
+- Control de acceso por rol 👍
+- Auditoria de acciones criticas 👍

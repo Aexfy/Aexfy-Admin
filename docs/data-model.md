@@ -1,6 +1,9 @@
-# Data Model
+﻿# Modelo de datos
 
-Table: public.aexfy_admin_state
+Estado
+- Modelo aplicado en el codigo actual. 👍
+
+Tabla: public.aexfy_admin_state
 - id (text) primary key
 - type (text)
 - companies (jsonb)
@@ -8,15 +11,15 @@ Table: public.aexfy_admin_state
 - meta (jsonb)
 - updated_at (timestamptz)
 
-Row: id = main
-- companies: array of company objects
-- users: array of user objects
+Fila: id = main
+- companies: array de empresas
+- users: array de usuarios
 
-Row: id = __meta__ and type = meta
-- meta: object with auxiliary data
+Fila: id = __meta__ y type = meta
+- meta: objeto con datos auxiliares
 
-Company object (example)
-- id: string (zone prefix + sequence, e.g. CT-0001)
+Empresa (ejemplo)
+- id: string (prefijo zona + secuencia, ej: CT-0001)
 - name: string
 - rut: string
 - giro: string
@@ -31,13 +34,13 @@ Company object (example)
 - status: string (active, pending, blocked)
 - owner_email: string
 - seller_email: string
-- modules: array of strings
+- modules: array de strings
 - created_at: ISO string
 - updated_at: ISO string
 
-User object (example)
-- id: string (local id or auth id)
-- auth_id: string (auth.users id when available)
+Usuario (ejemplo)
+- id: string (id local o auth id)
+- auth_id: string (auth.users id cuando esta disponible)
 - email: string
 - status: string (active, disabled)
 - user_metadata: object
@@ -50,18 +53,18 @@ User object (example)
   - company_id
   - company_name
   - company_code
-  - user_type (staff or cliente)
-  - roles: array of role strings
-  - role: primary role
+  - user_type (staff o cliente)
+  - roles: array de roles
+  - role: rol primario
 - created_at: ISO string
 - updated_at: ISO string
 
-Auth metadata mapping
-- auth.users.user_metadata mirrors user_metadata above
-- roles stored in user_metadata.roles (array)
-- primary role stored in user_metadata.role
+Mapping en Auth
+- auth.users.user_metadata refleja user_metadata
+- roles en user_metadata.roles
+- rol primario en user_metadata.role
 
-Meta object
+Meta
 - supportTemplates: array
 - productLibrary: array
 - productTemplates: array

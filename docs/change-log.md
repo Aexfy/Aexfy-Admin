@@ -1,7 +1,7 @@
-# Change Log
+﻿# Registro de cambios
 
-Format
-- YYYY-MM-DD | Version | Summary | Author
+Formato
+- YYYY-MM-DD | Version | Resumen | Autor
 
-Entries
-- 2026-01-14 | 0.1.0 | Initial ISO framework templates | Aexfy
+Entradas
+- 2026-01-14 | 0.1.0 | Plantillas iniciales de marco ISO | Aexfy
