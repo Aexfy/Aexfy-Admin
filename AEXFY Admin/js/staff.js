@@ -21,6 +21,14 @@
     { value: 'rrhh', label: 'RRHH' }
   ];
 
+  var DEFAULT_ZONES = [
+    { id: 'NG', label: 'Zona 1 - Norte Grande' },
+    { id: 'NC', label: 'Zona 2 - Norte Chico' },
+    { id: 'CT', label: 'Zona 3 - Centro' },
+    { id: 'SR', label: 'Zona 4 - Sur' },
+    { id: 'AU', label: 'Zona 5 - Austral' }
+  ];
+
   function canManage() {
     var level = N.state.session && N.state.session.accessLevel;
     return level === 'owner' || level === 'manager' || level === 'hr';
@@ -43,7 +51,9 @@
   }
 
   function getZoneOptions() {
-    return N.utils.getZoneOptions ? N.utils.getZoneOptions() : [];
+    var options = N.utils.getZoneOptions ? N.utils.getZoneOptions() : [];
+    if (!options || !options.length) return DEFAULT_ZONES;
+    return options;
   }
 
   function shouldRequireZones(roles) {
@@ -80,15 +90,16 @@
     return N.utils.normalizeZones(zones);
   }
 
-  function updateZoneSection(form, roles, selectedZones) {
+  function updateZoneSection(form, roles, selectedZones, forceShow) {
     if (!form) return;
     var section = form.querySelector('[data-zone-section]');
     if (!section) return;
     var needsZones = shouldRequireZones(roles);
-    section.style.display = needsZones ? '' : 'none';
+    var shouldShow = forceShow || needsZones;
+    section.style.display = shouldShow ? '' : 'none';
     var container = form.querySelector('[data-zone-options]');
     if (container) {
-      if (needsZones) {
+      if (shouldShow) {
         renderZoneOptions(container, selectedZones || collectZones(form));
       } else {
         container.innerHTML = '';
@@ -99,6 +110,85 @@
         input.checked = false;
       });
     }
+  }
+
+  function renderZoneBoard() {
+    var board = N.utils.$('[data-zone-board]');
+    var columnsContainer = N.utils.$('[data-zone-columns]');
+    if (!board || !columnsContainer) return;
+    var allowed = canManage();
+    board.style.display = '';
+
+    var options = getZoneOptions();
+    var unassigned = { id: '__none__', label: 'Sin zona' };
+    var zones = [unassigned].concat(options);
+
+    var staffList = getStaffList();
+
+    var cardsByZone = {};
+    zones.forEach(function(z) { cardsByZone[z.id] = []; });
+
+    staffList.forEach(function(user) {
+      var userZones = N.utils.getUserZones ? N.utils.getUserZones(user) : [];
+      var target = userZones && userZones.length ? userZones[0] : '__none__';
+      if (!cardsByZone[target]) cardsByZone[target] = [];
+      cardsByZone[target].push(user);
+    });
+
+    columnsContainer.innerHTML = zones.map(function(zone) {
+      var users = cardsByZone[zone.id] || [];
+      var cards = users.map(function(u) {
+        var name = (u.user_metadata && u.user_metadata.full_name) || u.email || 'Sin nombre';
+        return (
+          '<div class="zone-card' + (allowed ? '' : ' is-disabled') + '" ' +
+            (allowed ? 'draggable="true"' : '') +
+            ' data-user-id="' + (u.id || '') + '">' +
+            '<div class="zone-card-title">' + N.utils.escapeHtml(name) + '</div>' +
+            '<div class="zone-card-sub">' + N.utils.getRoleLabel(N.utils.getUserRoles(u)) + '</div>' +
+          '</div>'
+        );
+      }).join('');
+      return (
+        '<div class="zone-column" data-zone-id="' + zone.id + '">' +
+          '<div class="zone-column-header">' + N.utils.escapeHtml(zone.label) + '</div>' +
+          '<div class="zone-column-body" data-drop-zone="true">' + cards + '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    if (allowed) {
+      columnsContainer.querySelectorAll('.zone-card').forEach(function(card) {
+        card.addEventListener('dragstart', function(e) {
+          e.dataTransfer.setData('text/plain', card.getAttribute('data-user-id') || '');
+        });
+      });
+
+      columnsContainer.querySelectorAll('[data-drop-zone]').forEach(function(zoneEl) {
+        zoneEl.addEventListener('dragover', function(e) { e.preventDefault(); });
+        zoneEl.addEventListener('drop', function(e) {
+          e.preventDefault();
+          var userId = e.dataTransfer.getData('text/plain');
+          var parentCol = e.currentTarget.closest('[data-zone-id]');
+          var zoneId = parentCol ? parentCol.getAttribute('data-zone-id') : '__none__';
+          handleZoneDrop(userId, zoneId === '__none__' ? [] : [zoneId]);
+        });
+      });
+    }
+  }
+
+  async function handleZoneDrop(userId, zones) {
+    if (!userId) return;
+    var index = N.state.users.findIndex(function(u) { return u.id === userId; });
+    if (index < 0) return;
+    var user = N.state.users[index];
+    var meta = user.user_metadata || {};
+    meta.zones = N.utils.normalizeZones(zones || []);
+    user.user_metadata = meta;
+    user.updated_at = N.utils.nowISO();
+    N.audit.log('staff_zone_assign', { id: user.id, zones: meta.zones });
+    await N.data.saveState();
+    render();
+    renderZoneBoard();
   }
 
   function sanitizeNameValue(value) {
@@ -272,14 +362,14 @@
       lockStaffType(modalForm);
       renderRoleOptions(modalForm.querySelector('[data-role-options]'), selectedRoles, allowedRoles);
       renderZoneOptions(modalForm.querySelector('[data-zone-options]'), selectedZones);
-      updateZoneSection(modalForm, selectedRoles, selectedZones);
       var zoneSection = modalForm.querySelector('[data-zone-section]');
-      if (zoneSection && shouldRequireZones(selectedRoles)) {
+      if (zoneSection) {
         zoneSection.style.display = '';
       }
+      updateZoneSection(modalForm, selectedRoles, selectedZones, true);
       modalForm.addEventListener('change', function(event) {
         if (event.target && event.target.name === 'roles') {
-          updateZoneSection(modalForm, collectRoles(modalForm));
+          updateZoneSection(modalForm, collectRoles(modalForm), collectZones(modalForm), true);
         }
       });
       if (prefill) {
@@ -557,6 +647,8 @@
         message: 'No hay miembros de staff registrados.'
       }
     });
+
+    renderZoneBoard();
   }
 
   function handleSearch(event) {
@@ -617,6 +709,9 @@
     document.addEventListener('state:updated', function() {
       render();
     });
+
+    // Render inicial para que el tablero de zonas y la tabla aparezcan aun antes de eventos.
+    render();
   };
 
   staff.render = render;

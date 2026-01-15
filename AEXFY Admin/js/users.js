@@ -128,12 +128,17 @@
     return N.utils.normalizeZones(zones);
   }
 
-  function updateZoneSection(form, roles, selectedZones) {
+  function updateZoneSection(form, roles, selectedZones, forceShow) {
     if (!form) return;
     var section = form.querySelector('[data-zone-section]');
     if (!section) return;
+    var isClient = getFormUserType(form) === 'cliente';
     var needsZones = shouldRequireZones(roles);
-    section.style.display = needsZones ? '' : 'none';
+    if (isClient) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = (forceShow || needsZones) ? '' : 'none';
     var container = form.querySelector('[data-zone-options]');
     if (container) {
       if (needsZones) {
@@ -303,8 +308,17 @@
       }
     }
 
+    var zoneSection = form.querySelector('[data-zone-section]');
+    if (zoneSection) {
+      if (isClient) {
+        zoneSection.style.display = 'none';
+      } else {
+        zoneSection.style.display = '';
+      }
+    }
+
     updateCompanyFields(form, isClient);
-    updateZoneSection(form, isClient ? [] : getSelectedRoles(form));
+    updateZoneSection(form, isClient ? [] : getSelectedRoles(form), null, !isClient);
   }
 
   function bindTypeSelect(form, allowedRoles, isRequest) {
@@ -503,12 +517,12 @@
       renderRoleOptions(rolesContainer, selectedRoles, allowedRoles);
       var zonesContainer = modalForm.querySelector('[data-zone-options]');
       renderZoneOptions(zonesContainer, selectedZones);
-      updateZoneSection(modalForm, selectedRoles, selectedZones);
+      updateZoneSection(modalForm, selectedRoles, selectedZones, true);
       toggleRequestFields(modalForm, isRequest);
       bindTypeSelect(modalForm, allowedRoles, isRequest);
       modalForm.addEventListener('change', function(event) {
         if (event.target && event.target.name === 'roles') {
-          updateZoneSection(modalForm, getSelectedRoles(modalForm));
+          updateZoneSection(modalForm, getSelectedRoles(modalForm), collectZones(modalForm), true);
         }
       });
       if (initialCompanyId && initialIsClient) {
