@@ -80,10 +80,18 @@
       logDebug('Data module missing.');
     }
     initializeModules();
+    if (N.notifications && typeof N.notifications.init === 'function') {
+      N.notifications.init();
+    }
     if (N.data && typeof N.data.bootstrapState === 'function') {
       N.data.bootstrapState({ cacheOnly: true });
     }
-    document.addEventListener('state:updated', initializeModules);
+      document.addEventListener('state:updated', function() {
+        initializeModules();
+        if (N.notifications && typeof N.notifications.render === 'function') {
+          N.notifications.render();
+        }
+      });
   };
 
   app.refreshModules = function() {

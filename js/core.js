@@ -42,6 +42,8 @@
     CACHE_ENABLED: true,
     CACHE_KEY: 'aexfy_admin_cache',
     CACHE_TTL_MS: 300000
+    ,
+    SUPABASE_EMAIL_FUNCTION: ''
   };
 
   N.state = {
@@ -57,7 +59,8 @@
       productTemplates: [],
       auditLog: [],
       userRequests: [],
-      companyRequests: []
+      companyRequests: [],
+      notifications: []
     },
     session: null
   };
@@ -295,6 +298,141 @@
     }
   };
 
+  N.notifications = {
+    _initialized: false,
+    _container: null,
+    init: function() {
+      if (this._initialized) return;
+      var container = N.utils.$('#zone-alerts');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'zone-alerts';
+        document.body.appendChild(container);
+      }
+      this._container = container;
+      document.addEventListener('state:updated', this.render.bind(this));
+      this.render();
+      this._initialized = true;
+    },
+    ensureMeta: function() {
+      if (!N.state.meta) N.state.meta = {};
+      if (!Array.isArray(N.state.meta.notifications)) {
+        N.state.meta.notifications = [];
+      }
+    },
+    notifyZoneSupervisors: function(type, message, metadata, zones) {
+      this.ensureMeta();
+      var normalizedZones = N.utils.normalizeZones(zones || (metadata && metadata.zones) || []);
+      var supervisors = this.getSupervisors(normalizedZones);
+      if (!supervisors.length) return;
+      var subject = (metadata && metadata.subject) ? metadata.subject : 'Nueva solicitud de zona';
+      var link = (metadata && metadata.link) ? metadata.link : '';
+      var now = N.utils.nowISO();
+      supervisors.forEach(function(supervisor) {
+        var notification = {
+          id: N.utils.uid('notification'),
+          type: type,
+          recipient_email: (supervisor.email || '').toLowerCase(),
+          zones: normalizedZones,
+          message: message,
+          data: Object.assign({}, metadata || {}, { link: link }),
+          created_at: now,
+          read: false
+        };
+        N.state.meta.notifications.push(notification);
+        if (N.state.session && N.state.session.user && (N.state.session.user.email || '').toLowerCase() === notification.recipient_email) {
+          if (N.ui && typeof N.ui.showToast === 'function') {
+            N.ui.showToast('Nueva solicitud: ' + message, 'info', 5000);
+          }
+        }
+      });
+      this.sendEmail(supervisors.map(function(item) { return item.email; }), subject, message, link);
+      N.data.saveState({ silent: true });
+      this.render();
+    },
+    getSupervisors: function(zones) {
+      zones = N.utils.normalizeZones(zones || []);
+      return (N.state.users || []).filter(function(user) {
+        var roles = N.utils.getUserRoles(user);
+        if (roles.indexOf('supervisor') < 0) return false;
+        if (!zones.length) return true;
+        return N.utils.userMatchesZones(user, zones, N.state.companies || []);
+      });
+    },
+    sendEmail: async function(recipients, subject, message, link) {
+      if (!window.supabaseClient) return;
+      var functionName = N.config.SUPABASE_EMAIL_FUNCTION;
+      if (!functionName || typeof functionName !== 'string') return;
+      try {
+        await window.supabaseClient.functions.invoke(functionName, {
+          body: {
+            recipients: recipients.filter(Boolean),
+            subject: subject,
+            body: message + (link ? '\n\nRevisa: ' + link : '')
+          }
+        });
+      } catch (_err) {
+        if (N.config.DEBUG_LOGS) {
+          console.warn('Email notification fallido', _err);
+        }
+      }
+    },
+    render: function() {
+      var container = this._container;
+      if (!container) {
+        this._initialized = false;
+        this.init();
+        container = this._container;
+        if (!container) return;
+      }
+      this.ensureMeta();
+      var notifications = N.state.meta.notifications || [];
+      var sessionEmail = (N.state.session && N.state.session.user && N.state.session.user.email || '').toLowerCase();
+      var visible = notifications.filter(function(item) {
+        return !item.read && item.recipient_email === sessionEmail;
+      });
+      if (!visible.length) {
+        container.classList.remove('has-items');
+        container.innerHTML = '';
+        return;
+      }
+      container.classList.add('has-items');
+      container.innerHTML = visible.map(function(item) {
+        var zonesLabel = item.zones && item.zones.length ? item.zones.join(', ') : 'Todas';
+        return (
+          '<div class="zone-alert-card">' +
+            '<div class="zone-alert-label">' + N.utils.escapeHtml(zonesLabel) + '</div>' +
+            '<div class="zone-alert-message">' + N.utils.escapeHtml(item.message) + '</div>' +
+            '<div class="zone-alert-actions">' +
+              '<button class="btn btn-sm btn-outline" data-notification-id="' + item.id + '">Marcar leído</button>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+      container.querySelectorAll('[data-notification-id]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          N.notifications.markRead(button.getAttribute('data-notification-id'));
+        });
+      });
+    },
+    markRead: function(id) {
+      if (!id) return;
+      this.ensureMeta();
+      var notifications = N.state.meta.notifications || [];
+      var updated = false;
+      notifications.forEach(function(item) {
+        if (item.id === id) {
+          item.read = true;
+          updated = true;
+        }
+      });
+      if (updated) {
+        N.data.saveState({ silent: true });
+        this.render();
+      }
+    }
+  };
+
   N.data = {
     _realtimeChannel: null,
     _pollIntervalId: null,
@@ -471,8 +609,9 @@
       N.state.meta.productLibrary = Array.isArray(meta.productLibrary) ? meta.productLibrary : [];
       N.state.meta.productTemplates = Array.isArray(meta.productTemplates) ? meta.productTemplates : [];
       N.state.meta.auditLog = Array.isArray(meta.auditLog) ? meta.auditLog : [];
-      N.state.meta.userRequests = Array.isArray(meta.userRequests) ? meta.userRequests : [];
-      N.state.meta.companyRequests = Array.isArray(meta.companyRequests) ? meta.companyRequests : [];
+        N.state.meta.userRequests = Array.isArray(meta.userRequests) ? meta.userRequests : [];
+        N.state.meta.companyRequests = Array.isArray(meta.companyRequests) ? meta.companyRequests : [];
+        N.state.meta.notifications = Array.isArray(meta.notifications) ? meta.notifications : [];
       N.state.lastSyncAt = N.utils.nowISO();
       N.state.isReady = true;
       N.data.saveCache();

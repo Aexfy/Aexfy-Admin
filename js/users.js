@@ -52,6 +52,30 @@
     return N.roles ? N.roles.getRequestableRoles(roles) : [];
   }
 
+  function getSessionEmail() {
+    var sessionUser = N.state.session ? N.state.session.user : null;
+    return sessionUser && sessionUser.email ? sessionUser.email.toLowerCase() : '';
+  }
+
+  function isVendorSession() {
+    var roles = getCurrentRoles();
+    var vendorRoles = ['vendedor', 'seller', 'seller_manager'];
+    return roles.some(function(role) {
+      return vendorRoles.indexOf(role) >= 0;
+    });
+  }
+
+  function filterByVendor(list) {
+    if (!isVendorSession()) return list;
+    var email = getSessionEmail();
+    if (!email) return [];
+    return list.filter(function(user) {
+      var meta = user.user_metadata || {};
+      var createdBy = String(meta.created_by || meta.requester_email || '').toLowerCase();
+      return createdBy === email;
+    });
+  }
+
   function getRequests() {
     if (!N.state.meta.userRequests) {
       N.state.meta.userRequests = [];
@@ -692,11 +716,22 @@
         status: data.status || 'active'
       })
     };
+    request.payload.created_by = sessionUser && sessionUser.email ? sessionUser.email : '';
 
     getRequests().push(request);
     N.audit.log('user_request_create', { id: request.id, email: request.payload.email });
     await N.data.saveState();
     renderRequests();
+    var notificationZones = request.payload.zones || [];
+    var notificationMessage = 'Nueva solicitud de usuario ' + (request.payload.full_name || request.payload.email || '');
+    if (N.notifications && typeof N.notifications.notifyZoneSupervisors === 'function') {
+      N.notifications.notifyZoneSupervisors('user_request', notificationMessage, {
+        link: 'usuarios.html',
+        subject: 'Nueva solicitud de usuario',
+        zones: notificationZones,
+        requester: request.requester_email
+      }, notificationZones);
+    }
   }
 
   async function handleFormSubmit(event) {
@@ -915,6 +950,7 @@
 
     var baseList = Array.isArray(dataToRender) ? dataToRender : N.state.users;
     var list = N.utils.filterUsersByAccess(baseList);
+    list = filterByVendor(list);
     var editable = canManage();
 
     N.ui.setViewTitle('Usuarios');
@@ -1048,6 +1084,7 @@
       var primaryRole = N.roles ? N.roles.getPrimaryRole(roles) : roles[0];
       var userType = normalizeUserType(payload.user_type);
       var zones = N.utils.normalizeZones(payload.zones || payload.zone || payload.zona || []);
+      payload.created_by = payload.created_by || (request.requester_email || '');
       payload.zones = zones;
       var result = await createRemoteUser({
         email: payload.email,

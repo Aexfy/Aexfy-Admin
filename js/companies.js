@@ -202,6 +202,36 @@
     }
   }
 
+  function getSessionEmail() {
+    var sessionUser = N.state.session ? N.state.session.user : null;
+    return sessionUser && sessionUser.email ? sessionUser.email.toLowerCase() : '';
+  }
+
+  function isVendorSession() {
+    var sessionUser = N.state.session ? N.state.session.user : null;
+    if (!sessionUser) return false;
+    var roles = N.utils.getUserRoles(sessionUser);
+    return roles.indexOf('vendedor') >= 0 || roles.indexOf('seller') >= 0;
+  }
+
+  function filterCompaniesForVendor(list) {
+    if (!isVendorSession()) return list;
+    var email = getSessionEmail();
+    if (!email) return [];
+    return list.filter(function(company) {
+      var seller = String(company.seller_email || '').toLowerCase();
+      return seller === email;
+    });
+  }
+
+  function deriveCompanyZones(payload) {
+    var zones = N.utils.normalizeZones(payload.zones || payload.zone || payload.zona || []);
+    if (zones.length) return zones;
+    var prefix = N.utils.getCompanyZonePrefix(payload);
+    if (prefix) return [prefix];
+    return [];
+  }
+
   function openCompanyModal(company) {
     var isEditing = !!company;
     var template = N.utils.$('#company-form-template');
@@ -348,25 +378,31 @@
         }
       } else {
         var sessionUser = N.state.session ? N.state.session.user : null;
-        var request = {
+        var payload = Object.assign({}, data, {
           id: N.utils.uid('co_req'),
           created_at: N.utils.nowISO(),
           status: 'pending',
           requester_email: sessionUser ? sessionUser.email : 'unknown',
           requester_roles: sessionUser ? N.utils.getUserRoles(sessionUser) : [],
-          payload: Object.assign({}, data, {
-            plan: data.plan || 'starter',
-            status: data.status || 'pending',
-            modules: modules
-          })
+          payload: payload
         };
         getRequests().push(request);
-        N.audit.log('company_request_create', { id: request.id, name: data.name });
-        await N.data.saveState();
-        N.ui.showToast('Solicitud enviada para aprobacion.', 'info');
-        N.ui.closeModal();
-        renderRequests();
-        return;
+      N.audit.log('company_request_create', { id: request.id, name: data.name });
+      await N.data.saveState();
+      N.ui.showToast('Solicitud enviada para aprobacion.', 'info');
+      N.ui.closeModal();
+      var notificationZones = deriveCompanyZones(payload);
+      var notificationMessage = 'Nueva solicitud de empresa ' + (payload.name || '');
+      if (N.notifications && typeof N.notifications.notifyZoneSupervisors === 'function') {
+        N.notifications.notifyZoneSupervisors('company_request', notificationMessage, {
+          link: 'empresas.html',
+          subject: 'Nueva solicitud de empresa',
+          zones: notificationZones,
+          requester: request.requester_email
+        }, notificationZones);
+      }
+      renderRequests();
+      return;
       }
 
       await N.data.saveState();
@@ -393,6 +429,8 @@
     if (!ui.container) return;
 
     var list = Array.isArray(dataToRender) ? dataToRender : N.state.companies;
+    list = N.utils.filterCompaniesByAccess(list);
+    list = filterCompaniesForVendor(list);
     var editable = canManage();
 
     N.ui.setViewTitle('Empresas');
