@@ -90,6 +90,70 @@
     return isClientRole(roles) ? 'cliente' : 'staff';
   }
 
+  function getZoneOptions() {
+    return N.utils.getZoneOptions ? N.utils.getZoneOptions() : [];
+  }
+
+  function shouldRequireZones(roles) {
+    if (!Array.isArray(roles)) return false;
+    var required = N.config.ZONE_ROLES || [];
+    return roles.some(function(role) { return required.indexOf(role) >= 0; });
+  }
+
+  function renderZoneOptions(container, selectedZones) {
+    if (!container) return;
+    var options = getZoneOptions();
+    var selected = N.utils.normalizeZones(selectedZones || []);
+    if (!options.length) {
+      container.innerHTML = '<div class="text-muted">Sin zonas disponibles.</div>';
+      return;
+    }
+    container.innerHTML = options.map(function(option) {
+      var checked = selected.indexOf(option.id) >= 0 ? ' checked' : '';
+      return (
+        '<label class="role-chip">' +
+          '<input type="checkbox" name="zones" value="' + option.id + '"' + checked + '>' +
+          '<span>' + option.label + '</span>' +
+        '</label>'
+      );
+    }).join('');
+  }
+
+  function collectZones(form) {
+    if (!form) return [];
+    var zones = [];
+    form.querySelectorAll('input[name="zones"]:checked').forEach(function(input) {
+      zones.push(input.value);
+    });
+    return N.utils.normalizeZones(zones);
+  }
+
+  function updateZoneSection(form, roles, selectedZones, forceShow) {
+    if (!form) return;
+    var section = form.querySelector('[data-zone-section]');
+    if (!section) return;
+    var isClient = getFormUserType(form) === 'cliente';
+    var needsZones = shouldRequireZones(roles);
+    if (isClient) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = (forceShow || needsZones) ? '' : 'none';
+    var container = form.querySelector('[data-zone-options]');
+    if (container) {
+      if (needsZones) {
+        renderZoneOptions(container, selectedZones || collectZones(form));
+      } else {
+        container.innerHTML = '';
+      }
+    }
+    if (!needsZones) {
+      form.querySelectorAll('input[name="zones"]').forEach(function(input) {
+        input.checked = false;
+      });
+    }
+  }
+
   function sanitizeNameValue(value) {
     return String(value || '').replace(/[^\p{L}\s]/gu, '').replace(/\s+/g, ' ').trim();
   }
@@ -148,7 +212,8 @@
   }
 
   function getCompanyOptions() {
-    return (N.state.companies || []).map(function(company, index) {
+    var companies = N.utils.filterCompaniesByAccess(N.state.companies || []);
+    return companies.map(function(company, index) {
       var code = getCompanyCode(company, index);
       return {
         id: company.id,
@@ -243,7 +308,17 @@
       }
     }
 
+    var zoneSection = form.querySelector('[data-zone-section]');
+    if (zoneSection) {
+      if (isClient) {
+        zoneSection.style.display = 'none';
+      } else {
+        zoneSection.style.display = '';
+      }
+    }
+
     updateCompanyFields(form, isClient);
+    updateZoneSection(form, isClient ? [] : getSelectedRoles(form), null, !isClient);
   }
 
   function bindTypeSelect(form, allowedRoles, isRequest) {
@@ -372,6 +447,7 @@
     if (!form) return;
 
     var selectedRoles = isEditing ? N.utils.getUserRoles(user) : [];
+    var selectedZones = isEditing ? N.utils.getUserZones(user) : [];
     var allowedRoles = isRequest ? getRequestableRoleOptions() : getAllowedRoleOptions();
     var initialType = isRequest ? 'cliente' : (isEditing ? getUserTypeFromUser(user) : 'staff');
     var initialIsClient = initialType === 'cliente';
@@ -439,8 +515,16 @@
       }
       var rolesContainer = modalForm.querySelector('[data-role-options]');
       renderRoleOptions(rolesContainer, selectedRoles, allowedRoles);
+      var zonesContainer = modalForm.querySelector('[data-zone-options]');
+      renderZoneOptions(zonesContainer, selectedZones);
+      updateZoneSection(modalForm, selectedRoles, selectedZones, true);
       toggleRequestFields(modalForm, isRequest);
       bindTypeSelect(modalForm, allowedRoles, isRequest);
+      modalForm.addEventListener('change', function(event) {
+        if (event.target && event.target.name === 'roles') {
+          updateZoneSection(modalForm, getSelectedRoles(modalForm), collectZones(modalForm), true);
+        }
+      });
       if (initialCompanyId && initialIsClient) {
         var companyMatch = (N.state.companies || []).find(function(item) { return item.id === initialCompanyId; });
         if (companyMatch) {
@@ -468,7 +552,7 @@
     return getSelectedRoles(form);
   }
 
-  function getUserPayload(data, roles, primaryRole, userType) {
+  function getUserPayload(data, roles, primaryRole, userType, zones) {
     var resolvedType = getUserTypeFromRoles(roles, userType);
     var isClient = resolvedType === 'cliente';
     return {
@@ -483,7 +567,8 @@
       rut: data.rut || '',
       user_type: resolvedType,
       roles: roles,
-      role: primaryRole
+      role: primaryRole,
+      zones: N.utils.normalizeZones(zones || [])
     };
   }
 
@@ -554,14 +639,14 @@
     }
   }
 
-  async function createRemoteUser(data, roles, primaryRole, userType) {
+  async function createRemoteUser(data, roles, primaryRole, userType, zones) {
     if (!window.supabaseClient) throw new Error('Supabase no disponible');
 
     var payload = {
       email: data.email,
       password: '',
       roles: roles,
-      metadata: getUserPayload(data, roles, primaryRole, userType),
+      metadata: getUserPayload(data, roles, primaryRole, userType, zones),
       user_type: getUserTypeFromRoles(roles, userType),
       redirectTo: getPasswordRedirectUrl()
     };
@@ -593,7 +678,7 @@
     return response.data || {};
   }
 
-  async function addRequest(data, roles, primaryRole, reason, userType) {
+  async function addRequest(data, roles, primaryRole, reason, userType, zones) {
     var sessionUser = N.state.session ? N.state.session.user : null;
     var request = {
       id: N.utils.uid('req'),
@@ -602,7 +687,7 @@
       requester_email: sessionUser ? sessionUser.email : 'unknown',
       requester_roles: sessionUser ? N.utils.getUserRoles(sessionUser) : [],
       reason: reason || 'Contratacion nueva',
-      payload: Object.assign({}, getUserPayload(data, roles, primaryRole, userType), {
+      payload: Object.assign({}, getUserPayload(data, roles, primaryRole, userType, zones), {
         email: data.email || '',
         status: data.status || 'active'
       })
@@ -629,6 +714,7 @@
     var isEditing = mode === 'edit';
     var isRequest = mode === 'request';
     var isClient = userType === 'cliente';
+    var zones = collectZones(form);
 
     setFormError(form, '');
 
@@ -661,6 +747,16 @@
       setFormError(form, 'El rol Cliente no puede combinarse con otros roles.');
       if (emailInput && isEditing) emailInput.setAttribute('disabled', 'disabled');
       return;
+    }
+
+    if (shouldRequireZones(roles) && !zones.length) {
+      setFormError(form, 'Selecciona al menos una zona.');
+      if (emailInput && isEditing) emailInput.setAttribute('disabled', 'disabled');
+      return;
+    }
+
+    if (!shouldRequireZones(roles)) {
+      zones = [];
     }
 
     if (!isValidEmail(data.email)) {
@@ -719,6 +815,7 @@
           current.user_metadata.user_type = userType;
           current.user_metadata.roles = roles;
           current.user_metadata.role = primaryRole;
+          current.user_metadata.zones = zones;
           current.status = data.status || current.status || 'active';
           current.updated_at = N.utils.nowISO();
           N.audit.log('user_update', { id: current.id, email: current.email });
@@ -730,17 +827,17 @@
       }
 
       if (isRequest) {
-        await addRequest(data, roles, primaryRole, data.request_reason, userType);
+        await addRequest(data, roles, primaryRole, data.request_reason, userType, zones);
         N.ui.closeModal();
         return;
       }
 
-      var result = await createRemoteUser(data, roles, primaryRole, userType);
+      var result = await createRemoteUser(data, roles, primaryRole, userType, zones);
       var existing = result && result.existing;
       var existingUser = N.state.users.find(function(item) {
         return N.utils.normalizeEmail(item.email) === N.utils.normalizeEmail(data.email);
       });
-      var userPayload = getUserPayload(data, roles, primaryRole, userType);
+      var userPayload = getUserPayload(data, roles, primaryRole, userType, zones);
       if (existing && existingUser) {
         existingUser.user_metadata = Object.assign({}, existingUser.user_metadata || {}, userPayload);
         existingUser.status = data.status || existingUser.status || 'active';
@@ -767,7 +864,7 @@
       render();
     } catch (err) {
       if (err && err.payload && err.payload.error === 'approval_required') {
-        await addRequest(data, roles, primaryRole, data.request_reason, userType);
+        await addRequest(data, roles, primaryRole, data.request_reason, userType, zones);
         N.ui.showToast('Solicitud creada. Requiere aprobacion.', 'info');
         N.ui.closeModal();
         return;
@@ -816,7 +913,8 @@
   function render(dataToRender) {
     if (!ui.container) return;
 
-    var list = Array.isArray(dataToRender) ? dataToRender : N.state.users;
+    var baseList = Array.isArray(dataToRender) ? dataToRender : N.state.users;
+    var list = N.utils.filterUsersByAccess(baseList);
     var editable = canManage();
 
     N.ui.setViewTitle('Usuarios');
@@ -868,9 +966,36 @@
     });
   }
 
+  function requestMatchesZones(request, zones) {
+    if (!request) return false;
+    var allowed = {};
+    zones.forEach(function(zone) { allowed[zone] = true; });
+    var payload = request.payload || {};
+    var payloadZones = N.utils.normalizeZones(payload.zones || payload.zone || payload.zona || []);
+    if (payloadZones.length) {
+      return payloadZones.some(function(zone) { return allowed[zone]; });
+    }
+
+    var prefix = '';
+    if (payload.company_code || payload.region) {
+      prefix = N.utils.getCompanyZonePrefix({ company_code: payload.company_code || '', region: payload.region || '' });
+    }
+    if (!prefix && payload.company_id) {
+      var company = (N.state.companies || []).find(function(item) { return item.id === payload.company_id; });
+      if (company) prefix = N.utils.getCompanyZonePrefix(company);
+    }
+    return prefix ? !!allowed[prefix] : false;
+  }
+
   function renderRequests() {
     if (!ui.requestsList) return;
     var list = getRequests();
+    if (N.utils.isZoneRestrictedSession()) {
+      var zones = N.utils.getSessionZones();
+      list = zones.length ? list.filter(function(item) {
+        return requestMatchesZones(item, zones);
+      }) : [];
+    }
 
     var columns = [
       { key: 'created_at', label: 'Fecha' },
@@ -922,6 +1047,8 @@
       var roles = Array.isArray(payload.roles) ? payload.roles : ['cliente'];
       var primaryRole = N.roles ? N.roles.getPrimaryRole(roles) : roles[0];
       var userType = normalizeUserType(payload.user_type);
+      var zones = N.utils.normalizeZones(payload.zones || payload.zone || payload.zona || []);
+      payload.zones = zones;
       var result = await createRemoteUser({
         email: payload.email,
         first_name: payload.first_name,
@@ -933,7 +1060,7 @@
         company_code: payload.company_code,
         rut: payload.rut,
         status: payload.status || 'active'
-      }, roles, primaryRole, userType);
+      }, roles, primaryRole, userType, zones);
 
       var user = result.user || {};
       var newUser = {
@@ -982,7 +1109,7 @@
       return;
     }
 
-    var filtered = N.state.users.filter(function(user) {
+    var filtered = N.utils.filterUsersByAccess(N.state.users || []).filter(function(user) {
       var name = getUserDisplayName(user).toLowerCase();
       var email = (user.email || '').toLowerCase();
       var company = user.user_metadata && user.user_metadata.company_name ? user.user_metadata.company_name.toLowerCase() : '';

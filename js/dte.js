@@ -21,6 +21,22 @@
     return N.state.meta.dteLog;
   }
 
+  function getVisibleCompanies() {
+    return N.utils.filterCompaniesByAccess(N.state.companies || []);
+  }
+
+  function getVisibleLog() {
+    var log = getLog();
+    if (!N.utils.isZoneRestrictedSession()) return log;
+    var allowed = {};
+    getVisibleCompanies().forEach(function(company) {
+      allowed[company.id] = true;
+    });
+    return log.filter(function(item) {
+      return item && allowed[item.company_id];
+    });
+  }
+
   function openDteModal(item) {
     var isEditing = !!item;
     var template = N.utils.$('#dte-form-template');
@@ -32,7 +48,7 @@
 
     var companySelect = form.querySelector('[name="company_id"]');
     if (companySelect) {
-      companySelect.innerHTML = N.state.companies.map(function(company, index) {
+      companySelect.innerHTML = getVisibleCompanies().map(function(company, index) {
         var label = company.name || company.id;
         var code = company.company_code || ('C-' + String(index + 1).padStart(3, '0'));
         if (code) {
@@ -117,13 +133,15 @@
     N.ui.setViewTitle('DTE');
     N.ui.setActiveNav(VIEW_ID);
 
+    var companies = getVisibleCompanies();
+
     var columns = [
       { key: 'folio', label: 'Folio' },
       { key: 'company_id', label: 'Empresa', formatter: function(value) {
-        var company = N.state.companies.find(function(item) { return item.id === value; });
+        var company = companies.find(function(item) { return item.id === value; });
         if (!company) return N.utils.escapeHtml(value || '-');
         var label = company.name || value || '-';
-        var index = N.state.companies.indexOf(company);
+        var index = companies.indexOf(company);
         var code = company.company_code || ('C-' + String(index + 1).padStart(3, '0'));
         if (code) {
           label += ' (' + code + ')';
@@ -150,7 +168,7 @@
       });
     }
 
-    N.ui.renderTable('#dte-list', columns, getLog(), {
+    N.ui.renderTable('#dte-list', columns, getVisibleLog(), {
       emptyState: {
         title: 'Sin DTE',
         message: 'Agrega un DTE para comenzar.'

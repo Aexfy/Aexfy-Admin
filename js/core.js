@@ -23,6 +23,14 @@
     SALES_ROLES: ['supervisor', 'vendedor', 'instalador', 'capacitador'],
     SELLER_ROLES: ['vendedor', 'seller', 'seller_manager'],
     STAFF_ROLES: ['jefe_soporte', 'soporte', 'jefe_rrhh', 'rrhh', 'staff', 'support', 'developer'],
+    ZONE_ROLES: ['supervisor', 'vendedor', 'instalador', 'capacitador'],
+    ZONE_OPTIONS: [
+      { id: 'NG', label: 'Zona 1 - Norte Grande' },
+      { id: 'NC', label: 'Zona 2 - Norte Chico' },
+      { id: 'CT', label: 'Zona 3 - Centro' },
+      { id: 'SR', label: 'Zona 4 - Sur' },
+      { id: 'AU', label: 'Zona 5 - Austral' }
+    ],
 
     STATE_TABLE: 'aexfy_admin_state',
     STATE_ROW_ID: 'main',
@@ -247,6 +255,139 @@
       };
       return labels[status] || status || 'Sin estado';
     },
+    normalizeRegion: function(value) {
+      var text = String(value || '').trim().toLowerCase();
+      if (!text) return '';
+      try {
+        text = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      } catch (_err) {
+        // Ignore normalization errors.
+      }
+      text = text.replace(/[^a-z0-9\s]/g, ' ');
+      text = text.replace(/\s+/g, ' ').trim();
+      return text;
+    },
+    getZonePrefixFromRegion: function(region) {
+      var normalized = N.utils.normalizeRegion(region);
+      if (!normalized) return '';
+      var compact = normalized.replace(/\s/g, '');
+      var rules = [
+        { id: 'NG', regions: ['arica y parinacota', 'tarapaca', 'antofagasta'] },
+        { id: 'NC', regions: ['atacama', 'coquimbo'] },
+        { id: 'CT', regions: ['valparaiso', 'metropolitana', 'ohiggins', 'maule'] },
+        { id: 'SR', regions: ['nuble', 'biobio', 'la araucania', 'los rios'] },
+        { id: 'AU', regions: ['los lagos', 'aysen', 'magallanes'] }
+      ];
+      for (var i = 0; i < rules.length; i += 1) {
+        var rule = rules[i];
+        var match = rule.regions.some(function(name) {
+          var compactName = name.replace(/\s/g, '');
+          return normalized === name ||
+            normalized.indexOf(name) >= 0 ||
+            compact === compactName ||
+            compact.indexOf(compactName) >= 0;
+        });
+        if (match) return rule.id;
+      }
+      return '';
+    },
+    normalizeZones: function(zones) {
+      if (!zones) return [];
+      var list = [];
+      if (Array.isArray(zones)) {
+        list = zones;
+      } else if (typeof zones === 'string') {
+        list = zones.split(',');
+      } else {
+        list = [zones];
+      }
+      var allowed = {};
+      (N.config.ZONE_OPTIONS || []).forEach(function(item) {
+        allowed[item.id] = true;
+      });
+      return list.map(function(zone) {
+        return String(zone || '').trim().toUpperCase();
+      }).filter(function(zone) {
+        return zone && allowed[zone];
+      });
+    },
+    getZoneOptions: function() {
+      return Array.isArray(N.config.ZONE_OPTIONS) ? N.config.ZONE_OPTIONS.slice() : [];
+    },
+    getUserZones: function(user) {
+      if (!user || !user.user_metadata) return [];
+      var meta = user.user_metadata || {};
+      return N.utils.normalizeZones(meta.zones || meta.zone || meta.zona || []);
+    },
+    getCompanyZonePrefix: function(company) {
+      if (!company) return '';
+      var code = String(company.company_code || company.id || '').toUpperCase();
+      var match = code.match(/^(NG|NC|CT|SR|AU)-/);
+      if (match) return match[1];
+      var region = company.region || '';
+      return N.utils.getZonePrefixFromRegion(region);
+    },
+    isZoneRestrictedSession: function() {
+      var session = N.state.session;
+      if (!session || !session.user) return false;
+      var level = session.accessLevel;
+      if (level === 'owner' || level === 'manager') return false;
+      var roles = N.utils.getUserRoles(session.user);
+      var restricted = N.config.ZONE_ROLES || [];
+      return roles.some(function(role) { return restricted.indexOf(role) >= 0; });
+    },
+    getSessionZones: function() {
+      var session = N.state.session;
+      if (!session || !session.user) return [];
+      return N.utils.getUserZones(session.user);
+    },
+    filterCompaniesByZones: function(companies, zones) {
+      if (!Array.isArray(companies)) return [];
+      if (!zones || !zones.length) return [];
+      var allowed = {};
+      zones.forEach(function(zone) { allowed[zone] = true; });
+      return companies.filter(function(company) {
+        var prefix = N.utils.getCompanyZonePrefix(company);
+        return !!allowed[prefix];
+      });
+    },
+    filterCompaniesByAccess: function(companies) {
+      if (!Array.isArray(companies)) return [];
+      if (!N.utils.isZoneRestrictedSession()) return companies;
+      var zones = N.utils.getSessionZones();
+      return N.utils.filterCompaniesByZones(companies, zones);
+    },
+    userMatchesZones: function(user, zones, companies) {
+      if (!user) return false;
+      var allowed = {};
+      zones.forEach(function(zone) { allowed[zone] = true; });
+      var meta = user.user_metadata || {};
+      var userZones = N.utils.normalizeZones(meta.zones || meta.zone || meta.zona || []);
+      if (userZones.length) {
+        return userZones.some(function(zone) { return allowed[zone]; });
+      }
+      var userRoles = N.utils.getUserRoles(user);
+      var isClient = meta.user_type === 'cliente' || userRoles.indexOf('cliente') >= 0 || userRoles.indexOf('client') >= 0;
+      if (!isClient) return false;
+      var companyCode = meta.company_code || '';
+      if (!companyCode && meta.company_id && Array.isArray(companies)) {
+        var company = companies.find(function(item) { return item.id === meta.company_id; });
+        if (company && company.company_code) {
+          companyCode = company.company_code;
+        }
+      }
+      var match = String(companyCode || '').toUpperCase().match(/^(NG|NC|CT|SR|AU)-/);
+      return match ? !!allowed[match[1]] : false;
+    },
+    filterUsersByAccess: function(users) {
+      if (!Array.isArray(users)) return [];
+      if (!N.utils.isZoneRestrictedSession()) return users;
+      var zones = N.utils.getSessionZones();
+      if (!zones.length) return [];
+      return users.filter(function(user) {
+        return N.utils.userMatchesZones(user, zones, N.state.companies || []);
+      });
+    },
     debounce: function(fn, wait) {
       var timer = null;
       return function() {
@@ -436,6 +577,12 @@
         if (!user || typeof user !== 'object') return user;
         var normalized = Object.assign({}, user);
         var meta = Object.assign({}, normalized.user_metadata || {});
+        var zones = N.utils.normalizeZones(meta.zones || meta.zone || meta.zona || []);
+        if (zones.length) {
+          meta.zones = zones;
+        } else if (meta.zones) {
+          meta.zones = [];
+        }
         if (Array.isArray(meta.roles) && meta.roles.length) {
           meta.roles = meta.roles.map(function(role) {
             return String(role || '').trim().toLowerCase();

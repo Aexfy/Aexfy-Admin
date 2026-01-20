@@ -213,20 +213,25 @@
       var sessionRoles = N.utils.getUserRoles(sessionUser);
       var nextRoles = stateRoles.length ? stateRoles : sessionRoles;
       var rolesChanged = !rolesMatch(nextRoles, sessionRoles);
-      var stateUserType = stateUser && stateUser.user_metadata ? stateUser.user_metadata.user_type : '';
-      var sessionUserType = sessionUser.user_metadata ? sessionUser.user_metadata.user_type : '';
+      var meta = sessionUser.user_metadata || {};
+      var stateMeta = stateUser ? (stateUser.user_metadata || {}) : {};
+      var stateUserType = stateMeta.user_type || '';
+      var sessionUserType = meta.user_type || '';
       var userTypeChanged = stateUserType && stateUserType !== sessionUserType;
+      var stateZones = N.utils.normalizeZones(stateMeta.zones || stateMeta.zone || stateMeta.zona || []);
+      var sessionZones = N.utils.normalizeZones(meta.zones || meta.zone || meta.zona || []);
+      var zonesChanged = stateZones.join(',') !== sessionZones.join(',');
+      var accessChanged = rolesChanged || userTypeChanged || zonesChanged;
 
-      if (rolesChanged || userTypeChanged) {
-        var meta = sessionUser.user_metadata || {};
-        var stateMeta = stateUser ? (stateUser.user_metadata || {}) : {};
+      if (accessChanged) {
         meta.roles = nextRoles;
         meta.role = N.roles ? N.roles.getPrimaryRole(nextRoles) : (nextRoles[0] || meta.role);
         meta.user_type = stateMeta.user_type || meta.user_type || (nextRoles.indexOf('cliente') >= 0 ? 'cliente' : 'staff');
+        meta.zones = stateZones;
         sessionUser.user_metadata = meta;
       }
 
-      if (rolesChanged || userTypeChanged) {
+      if (accessChanged) {
         var accessLevel = getAccessLevel(sessionUser);
         N.state.session.accessLevel = accessLevel;
         N.state.session.accessRoles = nextRoles;

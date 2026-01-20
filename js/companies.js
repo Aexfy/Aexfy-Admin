@@ -89,6 +89,10 @@
     return formatCompanyCode(prefix, (position >= 0 ? position : 0) + 1);
   }
 
+  function getVisibleCompanies() {
+    return N.utils.filterCompaniesByAccess(N.state.companies || []);
+  }
+
   function ensureCompanyCode(company, region, excludeId) {
     var prefix = getZonePrefix(region);
     if (!prefix) return company.company_code || '';
@@ -105,6 +109,17 @@
   function canApproveRequests() {
     var level = N.state.session && N.state.session.accessLevel;
     return level === 'owner' || level === 'manager' || level === 'supervisor';
+  }
+
+  function isVendorSession() {
+    var sessionUser = N.state.session ? N.state.session.user : null;
+    if (!sessionUser) return false;
+    var roles = N.utils.getUserRoles(sessionUser);
+    return roles.indexOf('vendedor') >= 0 || roles.indexOf('seller') >= 0;
+  }
+
+  function canRequestCompany() {
+    return canManage() || isVendorSession();
   }
 
   function getRequests() {
@@ -304,6 +319,14 @@
         unlock();
         return;
       }
+      if (N.utils.isZoneRestrictedSession()) {
+        var zones = N.utils.getSessionZones();
+        if (!zones.length || zones.indexOf(zonePrefix) < 0) {
+          setFormError(form, 'La region no pertenece a tus zonas asignadas.');
+          unlock();
+          return;
+        }
+      }
 
       var requesterEmail = N.state.session && N.state.session.user ? N.utils.normalizeEmail(N.state.session.user.email) : '';
       if (!data.id) {
@@ -392,7 +415,8 @@
   function render(dataToRender) {
     if (!ui.container) return;
 
-    var list = Array.isArray(dataToRender) ? dataToRender : N.state.companies;
+    var baseList = Array.isArray(dataToRender) ? dataToRender : getVisibleCompanies();
+    var list = N.utils.filterCompaniesByAccess(baseList);
     var editable = canManage();
 
     N.ui.setViewTitle('Empresas');
@@ -439,9 +463,31 @@
     });
   }
 
+  function requestMatchesZones(request, zones) {
+    if (!request) return false;
+    var allowed = {};
+    zones.forEach(function(zone) { allowed[zone] = true; });
+    var payload = request.payload || {};
+    var prefix = '';
+    if (payload.company_code || payload.region) {
+      prefix = N.utils.getCompanyZonePrefix({ company_code: payload.company_code || '', region: payload.region || '' });
+    }
+    if (!prefix && payload.company_id) {
+      var company = (N.state.companies || []).find(function(item) { return item.id === payload.company_id; });
+      if (company) prefix = N.utils.getCompanyZonePrefix(company);
+    }
+    return prefix ? !!allowed[prefix] : false;
+  }
+
   function renderRequests() {
     if (!ui.requestsList) return;
     var list = getRequests();
+    if (N.utils.isZoneRestrictedSession()) {
+      var zones = N.utils.getSessionZones();
+      list = zones.length ? list.filter(function(item) {
+        return requestMatchesZones(item, zones);
+      }) : [];
+    }
 
     var columns = [
       { key: 'created_at', label: 'Fecha' },
@@ -487,6 +533,14 @@
 
     try {
       var payload = normalizeCompanyPayload(request.payload || {});
+      if (N.utils.isZoneRestrictedSession()) {
+        var allowedZones = N.utils.getSessionZones();
+        var prefix = getZonePrefix(payload.region || '');
+        if (!allowedZones.length || allowedZones.indexOf(prefix) < 0) {
+          N.ui.showToast('No tienes acceso a esta zona.', 'error');
+          return;
+        }
+      }
       var newCompany = Object.assign({}, payload, {
         id: N.utils.uid('co'),
         company_code: getNextCompanyCode(payload.region || ''),
@@ -593,7 +647,7 @@
       return;
     }
 
-    var filtered = N.state.companies.filter(function(company) {
+    var filtered = getVisibleCompanies().filter(function(company) {
       return (company.name || '').toLowerCase().indexOf(term) >= 0 ||
         (company.rut || '').toLowerCase().indexOf(term) >= 0 ||
         (company.owner_email || '').toLowerCase().indexOf(term) >= 0 ||
@@ -607,7 +661,7 @@
 
   function updateActionButtons() {
     if (!ui.createBtn) return;
-    var allowed = canManage();
+    var allowed = canRequestCompany();
     ui.createBtn.style.display = allowed ? '' : 'none';
     if (allowed && !ui.createBtn.dataset.bound) {
       ui.createBtn.addEventListener('click', function() {
@@ -670,6 +724,7 @@
     });
   };
 
+  companies.openCompanyModal = openCompanyModal;
   companies.render = render;
 })(window.Aexfy);
 

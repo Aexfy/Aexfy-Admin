@@ -23,11 +23,16 @@
     return level === 'owner' || level === 'manager';
   }
 
+  function getVisibleCompanies() {
+    return N.utils.filterCompaniesByAccess(N.state.companies || []);
+  }
+
   function getSelectedCompany() {
-    if (!selectedCompanyId && N.state.companies.length) {
-      selectedCompanyId = N.state.companies[0].id;
+    var list = getVisibleCompanies();
+    if (!selectedCompanyId && list.length) {
+      selectedCompanyId = list[0].id;
     }
-    return N.state.companies.find(function(item) { return item.id === selectedCompanyId; });
+    return list.find(function(item) { return item.id === selectedCompanyId; });
   }
 
   function renderModulesList(company) {
@@ -60,7 +65,8 @@
     N.ui.setViewTitle('Modulos');
     N.ui.setActiveNav(VIEW_ID);
 
-    if (!N.state.companies.length) {
+    var companies = getVisibleCompanies();
+    if (!companies.length) {
       N.ui.renderEmptyState('#modules-list', {
         title: 'Sin empresas',
         message: 'Crea empresas para gestionar modulos.'
@@ -70,14 +76,15 @@
     }
 
     if (ui.companySelect) {
-      ui.companySelect.innerHTML = N.state.companies.map(function(company) {
+      ui.companySelect.innerHTML = companies.map(function(company) {
         return '<option value="' + company.id + '">' + N.utils.escapeHtml(company.name || company.id) + '</option>';
       }).join('');
-      if (selectedCompanyId) {
+      var hasSelected = selectedCompanyId && companies.some(function(company) { return company.id === selectedCompanyId; });
+      if (hasSelected) {
         ui.companySelect.value = selectedCompanyId;
-      } else if (N.state.companies.length) {
-        ui.companySelect.value = N.state.companies[0].id;
-        selectedCompanyId = ui.companySelect.value;
+      } else {
+        selectedCompanyId = companies[0].id;
+        ui.companySelect.value = selectedCompanyId;
       }
     }
 

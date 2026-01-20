@@ -24,3 +24,4 @@ Manejo de no conformidades
 Mejora continua
 - Revision trimestral de defectos, incidentes y metricas.
 - Actualizar estandares y plantillas segun necesidad.
+

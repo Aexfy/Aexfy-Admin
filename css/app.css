@@ -641,6 +641,52 @@ textarea {
   accent-color: var(--accent);
 }
 
+/* Zone board */
+.zone-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.zone-column {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  min-height: 140px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.04);
+}
+
+.zone-column-header {
+  padding: 10px 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.zone-column-body {
+  padding: 10px;
+  min-height: 100px;
+}
+
+.zone-card {
+  background: #f7f9fb;
+  border: 1px solid #e6eef5;
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  cursor: grab;
+}
+
+.zone-card-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.zone-card-sub {
+  font-size: 12px;
+  color: #6c7a89;
+}
+
 .empty-note {
   color: var(--muted);
   padding: 10px 0;

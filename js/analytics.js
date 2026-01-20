@@ -17,11 +17,19 @@
     }, {});
   }
 
+  function getVisibleCompanies() {
+    return N.utils.filterCompaniesByAccess(N.state.companies || []);
+  }
+
+  function getVisibleUsers() {
+    return N.utils.filterUsersByAccess(N.state.users || []);
+  }
+
   function renderKPIs() {
     if (!ui.kpis) return;
 
-    var companies = N.state.companies || [];
-    var users = N.state.users || [];
+    var companies = getVisibleCompanies();
+    var users = getVisibleUsers();
     var activeCompanies = companies.filter(function(c) { return c.status === 'active'; }).length;
     var pendingCompanies = companies.filter(function(c) { return c.status === 'pending'; }).length;
     var blockedCompanies = companies.filter(function(c) { return c.status === 'blocked'; }).length;
@@ -46,7 +54,7 @@
 
   function renderPlanBreakdown() {
     if (!ui.plans) return;
-    var planCounts = countBy(N.state.companies || [], 'plan');
+    var planCounts = countBy(getVisibleCompanies(), 'plan');
     var entries = Object.keys(planCounts);
 
     if (!entries.length) {
@@ -64,7 +72,7 @@
 
   function renderStatusBreakdown() {
     if (!ui.status) return;
-    var statusCounts = countBy(N.state.companies || [], 'status');
+    var statusCounts = countBy(getVisibleCompanies(), 'status');
     var entries = Object.keys(statusCounts);
 
     if (!entries.length) {
