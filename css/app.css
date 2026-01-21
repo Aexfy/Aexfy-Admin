@@ -548,6 +548,44 @@ textarea {
 .toast-error { background: #c0392b; }
 .toast-info { background: #1f6f78; }
 
+#zone-alerts {
+  position: fixed;
+  top: 18px;
+  right: 22px;
+  width: 280px;
+  max-width: calc(100vw - 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 1200;
+}
+
+.zone-alert-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  border: 1px solid rgba(31,42,46,0.12);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.08);
+}
+
+.zone-alert-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.zone-alert-message {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.zone-alert-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* Modules UI */
 .kpi-grid {
   display: grid;

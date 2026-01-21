@@ -90,7 +90,8 @@
   }
 
   function getVisibleCompanies() {
-    return N.utils.filterCompaniesByAccess(N.state.companies || []);
+    var list = N.utils.filterCompaniesByAccess(N.state.companies || []);
+    return filterCompaniesForVendor(list);
   }
 
   function ensureCompanyCode(company, region, excludeId) {
@@ -215,6 +216,29 @@
     } catch (_err) {
       return '';
     }
+  }
+
+  function getSessionEmail() {
+    var sessionUser = N.state.session ? N.state.session.user : null;
+    return sessionUser && sessionUser.email ? sessionUser.email.toLowerCase() : '';
+  }
+
+  function filterCompaniesForVendor(list) {
+    if (!isVendorSession()) return list;
+    var email = getSessionEmail();
+    if (!email) return [];
+    return list.filter(function(company) {
+      var seller = String(company.seller_email || '').toLowerCase();
+      return seller === email;
+    });
+  }
+
+  function deriveCompanyZones(payload) {
+    var zones = N.utils.normalizeZones(payload.zones || payload.zone || payload.zona || []);
+    if (zones.length) return zones;
+    var prefix = N.utils.getCompanyZonePrefix(payload);
+    if (prefix) return [prefix];
+    return [];
   }
 
   function openCompanyModal(company) {
@@ -343,6 +367,7 @@
       form.querySelectorAll('input[name="modules"]:checked').forEach(function(input) {
         modules.push(input.value);
       });
+      data.modules = modules;
 
       var isEditing = !!data.id;
       if (!isEditing) {
@@ -371,23 +396,30 @@
         }
       } else {
         var sessionUser = N.state.session ? N.state.session.user : null;
+        var requestPayload = Object.assign({}, data);
         var request = {
           id: N.utils.uid('co_req'),
           created_at: N.utils.nowISO(),
           status: 'pending',
           requester_email: sessionUser ? sessionUser.email : 'unknown',
           requester_roles: sessionUser ? N.utils.getUserRoles(sessionUser) : [],
-          payload: Object.assign({}, data, {
-            plan: data.plan || 'starter',
-            status: data.status || 'pending',
-            modules: modules
-          })
+          payload: requestPayload
         };
         getRequests().push(request);
         N.audit.log('company_request_create', { id: request.id, name: data.name });
         await N.data.saveState();
         N.ui.showToast('Solicitud enviada para aprobacion.', 'info');
         N.ui.closeModal();
+        var notificationZones = deriveCompanyZones(requestPayload);
+        var notificationMessage = 'Nueva solicitud de empresa ' + (requestPayload.name || '');
+        if (N.notifications && typeof N.notifications.notifyZoneSupervisors === 'function') {
+          N.notifications.notifyZoneSupervisors('company_request', notificationMessage, {
+            link: 'empresas.html',
+            subject: 'Nueva solicitud de empresa',
+            zones: notificationZones,
+            requester: request.requester_email
+          }, notificationZones);
+        }
         renderRequests();
         return;
       }
@@ -415,8 +447,9 @@
   function render(dataToRender) {
     if (!ui.container) return;
 
-    var baseList = Array.isArray(dataToRender) ? dataToRender : getVisibleCompanies();
-    var list = N.utils.filterCompaniesByAccess(baseList);
+    var list = Array.isArray(dataToRender) ? dataToRender : N.state.companies;
+    list = N.utils.filterCompaniesByAccess(list);
+    list = filterCompaniesForVendor(list);
     var editable = canManage();
 
     N.ui.setViewTitle('Empresas');
