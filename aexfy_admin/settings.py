@@ -47,6 +47,7 @@ INSTALLED_APPS = [
 # Middlewares base; trabajan junto a urls.py y las vistas que se agreguen luego.
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -103,9 +104,20 @@ USE_I18N = True
 USE_TZ = True
 
 # Archivos estaticos para front y admin; se usaran en templates.
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 # Carpeta de estaticos globales para base.css y otros estilos compartidos.
 STATICFILES_DIRS = [BASE_DIR / "aexfy_admin" / "static"]
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# Configuracion extra para despliegues detras de proxy (Render/Heroku-like).
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 # Campo por defecto para modelos; aplica a apps futuras.
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
