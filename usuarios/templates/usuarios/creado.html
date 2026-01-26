@@ -1,0 +1,20 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Usuario creado{% endblock %}
+
+{% block content %}
+    <!-- Confirmacion de creacion de usuario; usa usuarios/views.py -->
+    <h1>Usuario creado</h1>
+    <p>El usuario fue creado y ya puede iniciar sesion.</p>
+
+    <!-- Este bloque muestra el enlace manual cuando se supera el limite de correos. -->
+    {% if enlace_invitacion %}
+        <p>Se alcanzo el limite de correos de Supabase. Comparte este enlace:</p>
+        <p><strong>Correo:</strong> {{ correo_invitado }}</p>
+        <p><a href="{{ enlace_invitacion }}">{{ enlace_invitacion }}</a></p>
+    {% endif %}
+
+    <p><a href="{% url 'usuarios_crear' %}">Crear otro usuario</a></p>
+    <p><a href="{% url 'usuarios_listado' %}">Volver al listado</a></p>
+{% endblock %}

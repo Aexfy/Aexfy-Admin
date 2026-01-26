@@ -1,0 +1,72 @@
+﻿{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <!-- Base compartida para todos los templates; centraliza estilos y estructura. -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Hoja de estilos global; usada por todas las vistas del proyecto. -->
+    <link rel="stylesheet" href="{% static 'aexfy_admin/css/base.css' %}">
+    <title>{% block title %}AEXFY Admin{% endblock %}</title>
+    <!-- Bloque extra para incluir CSS especifico por vista. -->
+    {% block extra_head %}{% endblock %}
+</head>
+<body data-realtime-enabled="{% if realtime_enabled %}1{% else %}0{% endif %}">
+    <!-- Navegacion base para acceder rapido a los modulos principales. -->
+    {% block nav %}
+    <nav class="app-nav">
+        <div class="nav-brand">AEXFY</div>
+        <div class="nav-links">
+            <a href="{% url 'inicio' %}">Inicio</a>
+            {% if perm_nav.staff %}
+                <a href="{% url 'staff_crear' %}">Crear staff</a>
+            {% endif %}
+            {% if perm_nav.usuarios %}
+                <a href="{% url 'usuarios_listado' %}">Usuarios</a>
+            {% endif %}
+            {% if perm_nav.empresas %}
+                <a href="{% url 'empresas_listado' %}">Empresas</a>
+            {% endif %}
+            {% if perm_nav.solicitudes %}
+                <a href="{% url 'solicitudes_listado' %}">Solicitudes</a>
+            {% endif %}
+            {% if perm_nav.auditoria %}
+                <a href="{% url 'auditoria_listado' %}">Auditoria</a>
+            {% endif %}
+            {% if perm_nav.reportes %}
+                <a href="{% url 'reportes_listado' %}">Reportes</a>
+            {% endif %}
+            {% if perm_nav.terminal %}
+                <a href="{% url 'terminal_sql' %}">Terminal</a>
+            {% endif %}
+        </div>
+        <div class="nav-actions">
+            <a class="btn btn--secundario" href="{% url 'logout' %}">Cerrar sesion</a>
+        </div>
+    </nav>
+    {% endblock %}
+
+    <!-- Contenedor principal reutilizable para cada modulo. -->
+    <main class="app-main">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Modal de confirmacion global; se usa con data-confirm en botones y enlaces. -->
+    <div class="modal-overlay" id="confirm-overlay" aria-hidden="true" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+            <h3 id="confirm-title">Confirmar accion</h3>
+            <p id="confirm-message">¿Deseas continuar?</p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn--secundario" id="confirm-cancel">Cancelar</button>
+                <button type="button" class="btn btn--eliminar" id="confirm-accept">Confirmar</button>
+            </div>
+        </div>
+    </div>
+    <!-- Bloque extra para incluir JS especifico por vista. -->
+    {% if realtime_enabled %}
+    <script src="{% static 'aexfy_admin/js/realtime_sse.js' %}" defer></script>
+    {% endif %}
+    <script src="{% static 'aexfy_admin/js/base.js' %}" defer></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

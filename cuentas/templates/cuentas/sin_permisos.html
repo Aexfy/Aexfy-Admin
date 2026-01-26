@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}Sin permisos{% endblock %}
+
+{% block content %}
+  <h1>Sin permisos</h1>
+  <p>No tienes permisos para acceder a: {{ permiso }}.</p>
+  {% if roles %}
+    <p>Roles actuales: {{ roles|join:", " }}</p>
+  {% endif %}
+  <p><a href="{% url 'inicio' %}">Volver al inicio</a></p>
+{% endblock %}

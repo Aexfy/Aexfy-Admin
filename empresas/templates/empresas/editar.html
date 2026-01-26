@@ -1,0 +1,113 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Editar empresa{% endblock %}
+
+{% block extra_js %}
+    <!-- Script de formato para RUT y telefonos; usa personal/js/formatos.js -->
+    <script src="{% static 'personal/js/formatos.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+    <!-- Edicion de empresas; se conecta con empresas/views.py -->
+    <h1>Editar empresa</h1>
+
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+
+        <div class="form-field">
+            <label>Codigo interno</label>
+            {{ form.company_code }}
+        </div>
+
+        <div class="form-field">
+            <label>RUT</label>
+            {{ form.rut }} {{ form.rut.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Razon social</label>
+            {{ form.razon_social }} {{ form.razon_social.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Nombre fantasia</label>
+            {{ form.nombre_fantasia }} {{ form.nombre_fantasia.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Giro</label>
+            {{ form.giro }} {{ form.giro.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Segmento</label>
+            {{ form.segmento_id }} {{ form.segmento_id.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Region</label>
+            {{ form.region_id }} {{ form.region_id.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Ciudad</label>
+            {{ form.ciudad }} {{ form.ciudad.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Comuna</label>
+            {{ form.comuna }} {{ form.comuna.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Direccion</label>
+            {{ form.direccion }} {{ form.direccion.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Telefono +56</label>
+            <div class="input-prefix">
+                <span>+56</span>
+                {{ form.telefono }}
+            </div>
+            {{ form.telefono.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Correo empresa</label>
+            {{ form.email }} {{ form.email.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Estado</label>
+            {{ form.estado }} {{ form.estado.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Plan</label>
+            {{ form.plan }} {{ form.plan.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Correo Dueño</label>
+            {{ form.owner_email }} {{ form.owner_email.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Zona</label>
+            {{ form.zona }}
+            {% if form.zona.field.disabled %}
+                <small>Tu rol fija la zona automaticamente.</small>
+            {% endif %}
+            {{ form.zona.errors }}
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn--editar">Guardar cambios</button>
+        </div>
+    </form>
+
+    <p><a href="{% url 'empresas_listado' %}">Volver al listado</a></p>
+{% endblock %}

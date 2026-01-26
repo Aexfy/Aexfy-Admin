@@ -1,0 +1,192 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Empresas{% endblock %}
+
+{% block extra_js %}
+    <!-- Script para acciones masivas; usa empresas/static/empresas/js/empresas.js -->
+    <script src="{% static 'empresas/js/empresas.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+    <!-- Listado de empresas con filtros y acciones masivas; usa empresas/views.py -->
+    <h1>Empresas</h1>
+
+    {% if mensaje %}
+        <p>{{ mensaje }}</p>
+    {% endif %}
+
+    <section>
+        <h2>Buscar y filtrar</h2>
+        <form method="get" class="form-grid">
+            <div class="form-field">
+                <label>Buscar</label>
+                {{ form_filtros.busqueda }}
+            </div>
+
+            <div class="form-field">
+                <label>Estado</label>
+                {{ form_filtros.estado }}
+            </div>
+
+            <div class="form-field">
+                <label>Plan</label>
+                {{ form_filtros.plan }}
+            </div>
+
+            <div class="form-field">
+                <label>Zona</label>
+                {{ form_filtros.zona }}
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn--primario">Aplicar filtros</button>
+                <a href="{% url 'empresas_listado' %}">Limpiar</a>
+                <a class="btn btn--secundario" href="{% url 'empresas_exportar' %}?{{ request.GET.urlencode }}">Exportar CSV</a>
+            </div>
+        </form>
+    </section>
+
+    <section>
+        <h2>Acciones masivas</h2>
+        {% if perm_acciones.empresas_masivo %}
+            <form method="post" id="form_masivo">
+                {% csrf_token %}
+                <div class="form-grid">
+                    <div class="form-field">
+                        <label>Accion</label>
+                        <select name="accion_masiva" id="accion_masiva">
+                            <option value="">Selecciona...</option>
+                            <option value="estado">Cambiar estado</option>
+                            <option value="plan">Cambiar plan</option>
+                            <option value="zona">Cambiar zona</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field" id="valor_estado">
+                        <label>Estado</label>
+                        <select name="valor_estado">
+                            <option value="activo">Activo</option>
+                            <option value="pendiente">Pendiente</option>
+                            <option value="bloqueado">Bloqueado</option>
+                            <option value="cancelado">Cancelado</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field" id="valor_plan">
+                        <label>Plan</label>
+                        <select name="valor_plan">
+                            <option value="starter">Starter</option>
+                            <option value="pro">Pro</option>
+                            <option value="enterprise">Enterprise</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field" id="valor_zona">
+                        <label>Zona</label>
+                        <select name="valor_zona">
+                            <option value="NG">NG</option>
+                            <option value="NC">NC</option>
+                            <option value="CT">CT</option>
+                            <option value="SR">SR</option>
+                            <option value="AU">AU</option>
+                        </select>
+                    </div>
+
+                    <input type="hidden" name="valor_masivo" id="valor_masivo" value="">
+                </div>
+        {% else %}
+            <p>No tienes permisos para acciones masivas.</p>
+        {% endif %}
+
+        <h2>Listado</h2>
+        <p><a href="{% url 'empresas_crear' %}">Crear empresa</a></p>
+        {% if perm_acciones.empresas_eliminar and not perm_acciones.empresas_masivo %}
+            <form method="post">
+                {% csrf_token %}
+        {% elif perm_acciones.empresas_masivo %}
+            {# form_masivo abierto arriba #}
+        {% endif %}
+        <table border="1" cellpadding="6">
+            <thead>
+                <tr>
+                    {% if perm_acciones.empresas_masivo %}
+                        <th><input type="checkbox" id="seleccionar_todos"></th>
+                    {% endif %}
+                    <th>RUT</th>
+                    <th>Codigo</th>
+                    <th>Razon social</th>
+                    <th>Nombre fantasia</th>
+                    <th>Email</th>
+                    <th>Telefono</th>
+                    <th>Estado</th>
+                    <th>Plan</th>
+                    <th>Zona</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for empresa in empresas %}
+                    <tr>
+                        {% if perm_acciones.empresas_masivo %}
+                            <td>
+                                <input type="checkbox" name="empresas_seleccionadas" value="{{ empresa.id }}">
+                            </td>
+                        {% endif %}
+                        <td>{{ empresa.rut }}</td>
+                        <td>{{ empresa.company_code }}</td>
+                        <td>{{ empresa.razon_social }}</td>
+                        <td>{{ empresa.nombre_fantasia }}</td>
+                        <td>{{ empresa.email }}</td>
+                        <td>{{ empresa.telefono }}</td>
+                        <td>{{ empresa.estado }}</td>
+                        <td>{{ empresa.plan }}</td>
+                        <td>{{ empresa.zona }}</td>
+                        <td>
+                            {% if perm_acciones.empresas_editar %}
+                                <span class="table-actions">
+                                    <a class="btn btn--editar" href="{% url 'empresas_editar' empresa.id %}">Editar</a>
+                                    {% if perm_acciones.empresas_eliminar %}
+                                        <button
+                                            type="submit"
+                                            class="btn btn--eliminar"
+                                            formaction="{% url 'empresas_eliminar' empresa.id %}"
+                                            formmethod="post"
+                                            data-confirm="¿Eliminar esta empresa?"
+                                        >
+                                            Eliminar
+                                        </button>
+                                    {% endif %}
+                                </span>
+                            {% else %}
+                                <span>-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="11">No hay empresas para mostrar.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if perm_acciones.empresas_masivo %}
+            <p>
+                <button type="submit" class="btn btn--aplicar">Aplicar cambios</button>
+            </p>
+            </form>
+        {% elif perm_acciones.empresas_eliminar and not perm_acciones.empresas_masivo %}
+            </form>
+        {% endif %}
+
+        <div class="table-pagination">
+            {% if page > 1 %}
+                <a class="btn btn--secundario" href="{% if qs_base %}?{{ qs_base.urlencode }}&page={{ page|add:'-1' }}{% else %}?page={{ page|add:'-1' }}{% endif %}">Anterior</a>
+            {% endif %}
+            <span>Pagina {{ page }}</span>
+            {% if has_next %}
+                <a class="btn btn--secundario" href="{% if qs_base %}?{{ qs_base.urlencode }}&page={{ page|add:'1' }}{% else %}?page={{ page|add:'1' }}{% endif %}">Siguiente</a>
+            {% endif %}
+        </div>
+    </section>
+{% endblock %}

@@ -1,0 +1,66 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Solicitudes{% endblock %}
+
+{% block content %}
+    <!-- Listado de solicitudes para aprobaciones; usa solicitudes/views.py -->
+    <h1>Solicitudes</h1>
+
+    {% if mensaje %}
+        <p>{{ mensaje }}</p>
+    {% endif %}
+
+    <section>
+        <h2>Buscar y filtrar</h2>
+        <form method="get" class="form-grid">
+            <div class="form-field">
+                <label>Estado</label>
+                {{ form_filtros.estado }}
+            </div>
+            <div class="form-field">
+                <label>Tipo</label>
+                {{ form_filtros.tipo }}
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn--primario">Aplicar filtros</button>
+                <a href="{% url 'solicitudes_listado' %}">Limpiar</a>
+                <a class="btn btn--secundario" href="{% url 'solicitudes_exportar' %}?{{ request.GET.urlencode }}">Exportar CSV</a>
+            </div>
+        </form>
+    </section>
+
+    <section>
+        <h2>Listado</h2>
+        <table border="1" cellpadding="6">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Estado</th>
+                    <th>Solicitante</th>
+                    <th>Revision</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for solicitud in solicitudes %}
+                    <tr>
+                        <td>{{ solicitud.created_at }}</td>
+                        <td>{{ solicitud.request_type }}</td>
+                        <td>{{ solicitud.status }}</td>
+                        <td>{{ solicitud.submitted_email }}</td>
+                        <td>{{ solicitud.reviewed_email }}</td>
+                        <td>
+                            <a href="{% url 'solicitud_detalle' solicitud.id %}">Ver detalle</a>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="6">No hay solicitudes para mostrar.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+{% endblock %}

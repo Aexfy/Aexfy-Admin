@@ -1,0 +1,124 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Editar usuario{% endblock %}
+
+{% block extra_js %}
+    <!-- Script para formateo de RUT y telefonos; reutiliza personal/js/formatos.js -->
+    <script src="{% static 'personal/js/formatos.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+    <!-- Edicion de usuarios; se conecta con usuarios/views.py -->
+    <h1>Editar usuario</h1>
+
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+
+        <div class="form-field">
+            <label>RUT</label>
+            {{ form.rut }}
+            {{ form.rut.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Correo</label>
+            {{ form.email }}
+            {{ form.email.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Primer nombre</label>
+            {{ form.primer_nombre }}
+            {{ form.primer_nombre.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Segundo nombre</label>
+            {{ form.segundo_nombre }}
+            {{ form.segundo_nombre.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Apellido paterno</label>
+            {{ form.apellido_paterno }}
+            {{ form.apellido_paterno.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Apellido materno</label>
+            {{ form.apellido_materno }}
+            {{ form.apellido_materno.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Numero +56</label>
+            <div class="input-prefix">
+                <span>+56</span>
+                {{ form.telefono }}
+            </div>
+            {{ form.telefono.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Numero de emergencia +56</label>
+            <div class="input-prefix">
+                <span>+56</span>
+                {{ form.telefono_emergencia }}
+            </div>
+            {{ form.telefono_emergencia.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Estado</label>
+            {{ form.estado }}
+            {{ form.estado.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Tipo</label>
+            {{ form.tipo_usuario }}
+            {{ form.tipo_usuario.errors }}
+        </div>
+
+        {% if mostrar_zona %}
+            <div class="form-field">
+                <label>Zona</label>
+                {{ form.zona }}
+                {% if form.zona.field.disabled %}
+                    <small>Tu rol fija la zona automaticamente.</small>
+                {% endif %}
+                {{ form.zona.errors }}
+            </div>
+        {% endif %}
+
+        <div class="form-field">
+            <label>Rol</label>
+            {{ form.rol }}
+            {{ form.rol.errors }}
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn--editar">Guardar cambios</button>
+        </div>
+    </form>
+
+    <section class="card" style="margin-top: 16px;">
+        <h2>Invitación</h2>
+        {% if mensaje_invite %}
+            <p>{{ mensaje_invite }}</p>
+        {% endif %}
+        <p>Si el usuario no recibió el correo, genera un nuevo enlace para crear su contraseña.</p>
+        <form method="post" action="{% url 'usuarios_invitar' usuario.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn--primario">Generar nuevo enlace</button>
+        </form>
+        {% if invite_link %}
+            <p>Enlace actual:</p>
+            <p><a href="{{ invite_link }}">{{ invite_link }}</a></p>
+        {% endif %}
+    </section>
+
+    <p><a href="{% url 'usuarios_listado' %}">Volver al listado</a></p>
+{% endblock %}

@@ -1,0 +1,49 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Login AEXFY{% endblock %}
+
+{% block nav %}{% endblock %}
+
+{% block extra_js %}
+    <!-- Script de formato automatico; coordina con cuentas/static/cuentas/js/formatos.js -->
+    <script src="{% static 'cuentas/js/formatos.js' %}" defer></script>
+{% endblock %}
+
+{% block content %}
+    <!-- Contenedor principal del formulario; datos van a cuentas/login_view -->
+    <h1>Iniciar sesion</h1>
+    <!-- Formulario Django; usa csrf_token y campos de cuentas/forms.py -->
+    <form method="post" class="form-grid" novalidate>
+        {% csrf_token %}
+
+        <div class="form-field">
+            <label for="{{ form.rut.id_for_label }}">{{ form.rut.label }}</label>
+            {{ form.rut }}
+            {% if form.rut.help_text %}
+                <small>{{ form.rut.help_text }}</small>
+            {% endif %}
+            {% if form.rut.errors %}
+                <div class="form-error">{{ form.rut.errors }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.password.id_for_label }}">{{ form.password.label }}</label>
+            {{ form.password }}
+            {% if form.password.errors %}
+                <div class="form-error">{{ form.password.errors }}</div>
+            {% endif %}
+        </div>
+
+        {% if form.non_field_errors %}
+            <div class="form-field form-field--full">
+                <div class="form-error">{{ form.non_field_errors }}</div>
+            </div>
+        {% endif %}
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn--primario">Entrar</button>
+        </div>
+    </form>
+{% endblock %}

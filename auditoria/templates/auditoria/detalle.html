@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Detalle auditoria{% endblock %}
+
+{% block content %}
+    <h1>Detalle de auditoria</h1>
+
+    {% if not evento %}
+        <p>No se encontro el evento.</p>
+        <p><a href="{% url 'auditoria_listado' %}">Volver</a></p>
+    {% else %}
+
+    <section class="card">
+        <h2>Resumen</h2>
+        <p><strong>Fecha:</strong> {{ evento.registrado_en }}</p>
+        <p><strong>Actor:</strong> {{ evento.actor_email }}</p>
+        <p><strong>Accion:</strong> {{ evento.accion }}</p>
+        <p><strong>Tabla:</strong> {{ evento.tabla_objetivo }}</p>
+        <p><strong>ID objetivo:</strong> {{ evento.id_objetivo }}</p>
+        <p><strong>Severidad:</strong> {{ evento.severidad }}</p>
+    </section>
+
+    {% if eliminados %}
+        <section class="card">
+            <h2>Usuarios eliminados</h2>
+            <table border="1" cellpadding="6">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>RUT</th>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                        <th>Zona</th>
+                        <th>Rol</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for usuario in eliminados %}
+                        <tr>
+                            <td>{{ usuario.id }}</td>
+                            <td>{{ usuario.rut }}</td>
+                            <td>{{ usuario.nombre }}</td>
+                            <td>{{ usuario.email }}</td>
+                            <td>{{ usuario.zona }}</td>
+                            <td>{{ usuario.rol }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% endif %}
+
+    {% if omitidos %}
+        <section class="card">
+            <h2>Usuarios omitidos</h2>
+            <table border="1" cellpadding="6">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>RUT</th>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                        <th>Motivo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for usuario in omitidos %}
+                        <tr>
+                            <td>{{ usuario.id }}</td>
+                            <td>{{ usuario.rut }}</td>
+                            <td>{{ usuario.nombre }}</td>
+                            <td>{{ usuario.email }}</td>
+                            <td>{{ usuario.motivo }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% endif %}
+
+    {% if usuarios and not eliminados %}
+        <section class="card">
+            <h2>Usuarios afectados</h2>
+            <table border="1" cellpadding="6">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>RUT</th>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                        <th>Zona</th>
+                        <th>Rol</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for usuario in usuarios %}
+                        <tr>
+                            <td>{{ usuario.id }}</td>
+                            <td>{{ usuario.rut }}</td>
+                            <td>{{ usuario.nombre }}</td>
+                            <td>{{ usuario.email }}</td>
+                            <td>{{ usuario.zona }}</td>
+                            <td>{{ usuario.rol }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% endif %}
+
+    {% if empresas %}
+        <section class="card">
+            <h2>Empresas afectadas</h2>
+            <table border="1" cellpadding="6">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>RUT</th>
+                        <th>Razon social</th>
+                        <th>Email</th>
+                        <th>Zona</th>
+                        <th>Plan</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for empresa in empresas %}
+                        <tr>
+                            <td>{{ empresa.id }}</td>
+                            <td>{{ empresa.rut }}</td>
+                            <td>{{ empresa.razon_social }}</td>
+                            <td>{{ empresa.email }}</td>
+                            <td>{{ empresa.zona }}</td>
+                            <td>{{ empresa.plan }}</td>
+                            <td>{{ empresa.estado }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% endif %}
+
+    <p><a href="{% url 'auditoria_listado' %}">Volver al listado</a></p>
+    {% endif %}
+{% endblock %}

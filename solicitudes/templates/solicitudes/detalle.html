@@ -1,0 +1,86 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Detalle solicitud{% endblock %}
+
+{% block content %}
+    <!-- Detalle de solicitud para aprobar o rechazar; usa solicitudes/views.py -->
+    <h1>Detalle de solicitud</h1>
+
+    <section class="card">
+        <h2 class="card-title">Resumen</h2>
+        <div class="meta-list">
+            <div><strong>ID:</strong> {{ solicitud.id }}</div>
+            <div><strong>Tipo:</strong> {{ solicitud.request_type }}</div>
+            <div><strong>Estado:</strong> {{ solicitud.status }}</div>
+            <div><strong>Creada:</strong> {{ solicitud.created_at }}</div>
+            <div><strong>Solicitante:</strong> {{ solicitud.submitted_email }}</div>
+            <div><strong>Revision:</strong> {{ solicitud.reviewed_email }}</div>
+        </div>
+    </section>
+
+    {% if solicitud.request_type == "company" %}
+        <section class="card">
+            <h2 class="card-title">Datos empresa</h2>
+            <div class="meta-list">
+                <div><strong>RUT:</strong> {{ solicitud.metadata.p_rut }}</div>
+                <div><strong>Razon social:</strong> {{ solicitud.metadata.p_razon_social }}</div>
+                <div><strong>Nombre fantasia:</strong> {{ solicitud.metadata.p_nombre_fantasia }}</div>
+                <div><strong>Giro:</strong> {{ solicitud.metadata.p_giro }}</div>
+                <div><strong>Region:</strong> {{ solicitud.metadata.p_region }}</div>
+                <div><strong>Ciudad:</strong> {{ solicitud.metadata.p_ciudad }}</div>
+                <div><strong>Comuna:</strong> {{ solicitud.metadata.p_comuna }}</div>
+                <div><strong>Direccion:</strong> {{ solicitud.metadata.p_direccion }}</div>
+                <div><strong>Telefono:</strong> {{ solicitud.metadata.p_telefono }}</div>
+                <div><strong>Email:</strong> {{ solicitud.metadata.p_email }}</div>
+                <div><strong>Estado:</strong> {{ solicitud.metadata.p_estado }}</div>
+                <div><strong>Plan:</strong> {{ solicitud.metadata.p_plan }}</div>
+                <div><strong>Zona:</strong> {{ solicitud.metadata.p_zona }}</div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2 class="card-title">Datos dueño</h2>
+            <div class="meta-list">
+                <div><strong>RUT:</strong> {{ solicitud.metadata.p_owner_rut }}</div>
+                <div><strong>Correo:</strong> {{ solicitud.metadata.p_owner_email }}</div>
+                <div><strong>Nombre:</strong> {{ solicitud.metadata.p_owner_primer_nombre }} {{ solicitud.metadata.p_owner_segundo_nombre }}</div>
+                <div><strong>Apellidos:</strong> {{ solicitud.metadata.p_owner_apellido_paterno }} {{ solicitud.metadata.p_owner_apellido_materno }}</div>
+                <div><strong>Telefono:</strong> {{ solicitud.metadata.p_owner_telefono }}</div>
+            </div>
+        </section>
+    {% elif solicitud.request_type == "staff" %}
+        <section class="card">
+            <h2 class="card-title">Datos staff</h2>
+            <div class="meta-list">
+                <div><strong>RUT:</strong> {{ solicitud.metadata.p_rut }}</div>
+                <div><strong>Correo:</strong> {{ solicitud.metadata.p_email }}</div>
+                <div><strong>Nombre:</strong> {{ solicitud.metadata.p_primer_nombre }} {{ solicitud.metadata.p_segundo_nombre }}</div>
+                <div><strong>Apellidos:</strong> {{ solicitud.metadata.p_apellido_paterno }} {{ solicitud.metadata.p_apellido_materno }}</div>
+                <div><strong>Telefono:</strong> {{ solicitud.metadata.p_telefono }}</div>
+                <div><strong>Emergencia:</strong> {{ solicitud.metadata.p_telefono_emergencia }}</div>
+                <div><strong>Rol:</strong> {{ solicitud.metadata.p_rol }}</div>
+                <div><strong>Zona:</strong> {{ solicitud.metadata.p_zona }}</div>
+            </div>
+        </section>
+    {% endif %}
+
+    <section>
+        <h2>Decision</h2>
+        <form method="post" class="form-grid">
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+
+            <div class="form-field form-field--full">
+                <label for="{{ form.decision_note.id_for_label }}">{{ form.decision_note.label }}</label>
+                {{ form.decision_note }}
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" name="accion" value="aprobar" class="btn btn--crear">Aprobar</button>
+                <button type="submit" name="accion" value="rechazar" class="btn btn--eliminar">Rechazar</button>
+                <a href="{% url 'solicitudes_listado' %}" class="btn btn--secundario">Volver</a>
+            </div>
+        </form>
+    </section>
+{% endblock %}

@@ -1,0 +1,151 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Crear empresa{% endblock %}
+
+{% block extra_js %}
+    <!-- Script de formato para RUT y telefonos; usa personal/js/formatos.js -->
+    <script src="{% static 'personal/js/formatos.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+    <!-- Formulario para crear empresas; usa empresas/views.py -->
+    <h1>Crear empresa</h1>
+    <p>El codigo interno se generara automaticamente segun la zona.</p>
+
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+
+        <div class="form-field form-field--full">
+            <h2>Datos de la empresa</h2>
+        </div>
+
+        <div class="form-field">
+            <label>RUT</label>
+            {{ form.rut }} {{ form.rut.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Razon social</label>
+            {{ form.razon_social }} {{ form.razon_social.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Nombre fantasia</label>
+            {{ form.nombre_fantasia }} {{ form.nombre_fantasia.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Giro</label>
+            {{ form.giro }} {{ form.giro.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Segmento</label>
+            {{ form.segmento_id }} {{ form.segmento_id.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Region</label>
+            {{ form.region_id }} {{ form.region_id.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Ciudad</label>
+            {{ form.ciudad }} {{ form.ciudad.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Comuna</label>
+            {{ form.comuna }} {{ form.comuna.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Direccion</label>
+            {{ form.direccion }} {{ form.direccion.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Telefono +56</label>
+            <div class="input-prefix">
+                <span>+56</span>
+                {{ form.telefono }}
+            </div>
+            {{ form.telefono.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Correo empresa</label>
+            {{ form.email }} {{ form.email.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Estado</label>
+            {{ form.estado }} {{ form.estado.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Plan</label>
+            {{ form.plan }} {{ form.plan.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Zona</label>
+            {{ form.zona }}
+            {% if form.zona.field.disabled %}
+                <small>Tu rol fija la zona automaticamente.</small>
+            {% endif %}
+            {{ form.zona.errors }}
+        </div>
+
+        <div class="form-field form-field--full">
+            <h2>Usuario dueño</h2>
+            <p>Se enviara una invitacion para que el Dueño cree su contrasena.</p>
+        </div>
+
+        <div class="form-field">
+            <label>RUT Dueño</label>
+            {{ form.owner_rut }} {{ form.owner_rut.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Correo Dueño</label>
+            {{ form.owner_email }} {{ form.owner_email.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Primer nombre Dueño</label>
+            {{ form.owner_primer_nombre }} {{ form.owner_primer_nombre.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Segundo nombre Dueño</label>
+            {{ form.owner_segundo_nombre }} {{ form.owner_segundo_nombre.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Apellido paterno Dueño</label>
+            {{ form.owner_apellido_paterno }} {{ form.owner_apellido_paterno.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Apellido materno Dueño</label>
+            {{ form.owner_apellido_materno }} {{ form.owner_apellido_materno.errors }}
+        </div>
+
+        <div class="form-field">
+            <label>Telefono Dueño +56</label>
+            <div class="input-prefix">
+                <span>+56</span>
+                {{ form.owner_telefono }}
+            </div>
+            {{ form.owner_telefono.errors }}
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn--crear">Crear empresa</button>
+        </div>
+    </form>
+    <p><a href="{% url 'empresas_listado' %}">Volver al listado</a></p>
+{% endblock %}

@@ -1,0 +1,24 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Staff creado{% endblock %}
+
+{% block content %}
+    <!-- Confirmacion de creacion de staff; se conecta con personal/views.py -->
+    <h1>Usuario creado</h1>
+    <p>El usuario de staff fue creado y ya puede iniciar sesion.</p>
+    <!-- Este bloque muestra el enlace manual cuando personal/views.py guarda staff_invite_link. -->
+    {% if enlace_invitacion %}
+        <p>
+            Se alcanzo el limite de correos de Supabase. Comparte este enlace con el
+            usuario para que cree su contrasena:
+        </p>
+        <p>
+            <strong>Correo:</strong> {{ correo_invitado }}
+        </p>
+        <p>
+            <a href="{{ enlace_invitacion }}">{{ enlace_invitacion }}</a>
+        </p>
+    {% endif %}
+    <p><a href="{% url 'staff_crear' %}">Crear otro usuario</a></p>
+{% endblock %}

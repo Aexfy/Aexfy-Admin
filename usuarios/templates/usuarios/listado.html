@@ -1,0 +1,199 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Usuarios{% endblock %}
+
+{% block extra_js %}
+    <!-- Script para acciones masivas; usa usuarios/static/usuarios/js/usuarios.js -->
+    <script src="{% static 'usuarios/js/usuarios.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+    <!-- Listado de usuarios con filtros y acciones masivas; usa usuarios/views.py -->
+    <h1>Usuarios</h1>
+
+    {% if mensaje %}
+        <p>{{ mensaje }}</p>
+    {% endif %}
+
+    <section>
+        <h2>Buscar y filtrar</h2>
+        <form method="get" class="form-grid">
+            <div class="form-field">
+                <label>Buscar</label>
+                {{ form_filtros.busqueda }}
+            </div>
+
+            <div class="form-field">
+                <label>Estado</label>
+                {{ form_filtros.estado }}
+            </div>
+
+            <div class="form-field">
+                <label>Tipo</label>
+                {{ form_filtros.tipo_usuario }}
+            </div>
+
+            <div class="form-field">
+                <label>Zona</label>
+                {{ form_filtros.zona }}
+            </div>
+
+            <div class="form-field">
+                <label>Rol</label>
+                {{ form_filtros.rol }}
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn--primario">Aplicar filtros</button>
+                <a href="{% url 'usuarios_listado' %}">Limpiar</a>
+                <a class="btn btn--secundario" href="{% url 'usuarios_exportar' %}?{{ request.GET.urlencode }}">Exportar CSV</a>
+            </div>
+        </form>
+    </section>
+
+    <section>
+        <h2>Acciones masivas</h2>
+        {% if perm_acciones.usuarios_masivo %}
+            <form method="post" id="form_masivo">
+                {% csrf_token %}
+                <div class="form-grid">
+                    <div class="form-field">
+                        <label>Accion</label>
+                        <select name="accion_masiva" id="accion_masiva">
+                            <option value="">Selecciona...</option>
+                            <option value="estado">Cambiar estado</option>
+                            <option value="zona">Cambiar zona</option>
+                            <option value="rol">Cambiar rol</option>
+                            {% if perm_acciones.usuarios_eliminar %}
+                                <option value="eliminar">Eliminar usuarios</option>
+                            {% endif %}
+                        </select>
+                    </div>
+
+                    <div class="form-field" id="valor_estado">
+                        <label>Estado</label>
+                        <select name="valor_estado">
+                            <option value="activo">Activo</option>
+                            <option value="inactivo">Inactivo</option>
+                            <option value="suspendido">Suspendido</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field" id="valor_zona">
+                        <label>Zona</label>
+                        <select name="valor_zona">
+                            <option value="NG">NG</option>
+                            <option value="NC">NC</option>
+                            <option value="CT">CT</option>
+                            <option value="SR">SR</option>
+                            <option value="AU">AU</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field" id="valor_rol">
+                        <label>Rol</label>
+                        <select name="valor_rol">
+                            {% for rol in form_filtros.fields.rol.choices %}
+                                {% if rol.0 %}
+                                    <option value="{{ rol.0 }}">{{ rol.1 }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <input type="hidden" name="valor_masivo" id="valor_masivo" value="">
+                </div>
+        {% else %}
+            <p>No tienes permisos para acciones masivas.</p>
+        {% endif %}
+
+        <h2>Listado</h2>
+        <p><a href="{% url 'usuarios_crear' %}">Crear usuario</a></p>
+        {% if perm_acciones.usuarios_eliminar and not perm_acciones.usuarios_masivo %}
+            <form method="post">
+                {% csrf_token %}
+        {% elif perm_acciones.usuarios_masivo %}
+            {# form_masivo abierto arriba #}
+        {% endif %}
+        <table border="1" cellpadding="6">
+            <thead>
+                <tr>
+                    {% if perm_acciones.usuarios_masivo %}
+                        <th><input type="checkbox" id="seleccionar_todos"></th>
+                    {% endif %}
+                    <th>RUT</th>
+                    <th>Nombre</th>
+                    <th>Email</th>
+                    <th>Telefono</th>
+                    <th>Estado</th>
+                    <th>Tipo</th>
+                    <th>Zona</th>
+                    <th>Rol</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for usuario in usuarios %}
+                    <tr>
+                        {% if perm_acciones.usuarios_masivo %}
+                            <td>
+                                <input type="checkbox" name="usuarios_seleccionados" value="{{ usuario.id }}">
+                            </td>
+                        {% endif %}
+                        <td>{{ usuario.rut }}</td>
+                        <td>{{ usuario.nombres }} {{ usuario.apellidos }}</td>
+                        <td>{{ usuario.email }}</td>
+                        <td>{{ usuario.telefono }}</td>
+                        <td>{{ usuario.estado }}</td>
+                        <td>{{ usuario.tipo_usuario }}</td>
+                        <td>{{ usuario.zona }}</td>
+                        <td>
+                            {% if usuario.roles %}
+                                {{ usuario.roles|join:", " }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="table-actions">
+                                <a class="btn btn--editar" href="{% url 'usuarios_editar' usuario.id %}">Editar</a>
+                                {% if perm_acciones.usuarios_eliminar and usuario_actual_id != usuario.id %}
+                                    <button
+                                        type="submit"
+                                        class="btn btn--eliminar"
+                                        formaction="{% url 'usuarios_eliminar' usuario.id %}"
+                                        formmethod="post"
+                                        data-confirm="¿Eliminar este usuario?"
+                                    >
+                                        Eliminar
+                                    </button>
+                                {% endif %}
+                            </span>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="10">No hay usuarios para mostrar.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if perm_acciones.usuarios_masivo %}
+            <p>
+                <button type="submit" class="btn btn--aplicar">Aplicar cambios</button>
+            </p>
+            </form>
+        {% elif perm_acciones.usuarios_eliminar and not perm_acciones.usuarios_masivo %}
+            </form>
+        {% endif %}
+
+        <div class="table-pagination">
+            {% if page > 1 %}
+                <a class="btn btn--secundario" href="{% if qs_base %}?{{ qs_base.urlencode }}&page={{ page|add:'-1' }}{% else %}?page={{ page|add:'-1' }}{% endif %}">Anterior</a>
+            {% endif %}
+            <span>Pagina {{ page }}</span>
+            {% if has_next %}
+                <a class="btn btn--secundario" href="{% if qs_base %}?{{ qs_base.urlencode }}&page={{ page|add:'1' }}{% else %}?page={{ page|add:'1' }}{% endif %}">Siguiente</a>
+            {% endif %}
+        </div>
+    </section>
+{% endblock %}

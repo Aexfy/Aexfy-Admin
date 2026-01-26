@@ -1,4 +1,4 @@
-OwnAexfy:
+    :
     Credenciales:
         aexfytech@gmail.com
         aexfytech@outlook.com
@@ -11,7 +11,7 @@ OwnAexfy:
 
     Crea a:
         Gerente:
-            Este rol lo crea solamente OwnAexfy
+            Este rol lo crea solamente AexfyOwner
             No puede crear a otro Gerente
             Puede hacer todo lo demas.
             Necesita un apartado de peticiones para aceptar la creacion de un usuario nuevo
@@ -47,7 +47,7 @@ OwnAexfy:
                             Da observaciones.
 
                         Vendedor: 
-                            Este rol puede crear a nuevos clientes con la aprobacion de su supervisor/gerente/OwnAexfy
+                            Este rol puede crear a nuevos clientes con la aprobacion de su supervisor/gerente/AexfyOwner
                             Subir los contratos firmados de los clientes
                             Ver su % de comision y ventas totales
                             Mantener relaciones con sus clientes.

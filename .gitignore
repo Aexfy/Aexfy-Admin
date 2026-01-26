@@ -1,1 +1,9 @@
+﻿.env
+# runtime DB
+sqlite3
+*.sqlite3
+__pycache__/
+*.pyc
+*.log
+Supabase.txt
 supabase.txt

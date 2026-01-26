@@ -1,0 +1,74 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Auditoria{% endblock %}
+
+{% block content %}
+    <!-- Listado de auditoria con filtros basicos; usa auditoria/views.py -->
+    <h1>Auditoria</h1>
+
+    <section>
+        <h2>Buscar y filtrar</h2>
+        <form method="get" class="form-grid">
+            <div class="form-field">
+                <label>Buscar</label>
+                {{ form_filtros.busqueda }}
+            </div>
+            <div class="form-field">
+                <label>Severidad</label>
+                {{ form_filtros.severidad }}
+            </div>
+            <div class="form-field">
+                <label>Desde</label>
+                {{ form_filtros.fecha_desde }}
+            </div>
+            <div class="form-field">
+                <label>Hasta</label>
+                {{ form_filtros.fecha_hasta }}
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn--primario">Aplicar filtros</button>
+                <a href="{% url 'auditoria_listado' %}">Limpiar</a>
+                <a class="btn btn--secundario" href="{% url 'auditoria_exportar' %}?{{ request.GET.urlencode }}">Exportar CSV</a>
+            </div>
+        </form>
+    </section>
+
+    <section>
+        <h2>Eventos</h2>
+        <table border="1" cellpadding="6">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Actor</th>
+                    <th>Accion</th>
+                    <th>Tabla</th>
+                    <th>ID objetivo</th>
+                    <th>Severidad</th>
+                    <th>Detalle</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for evento in eventos %}
+                    <tr>
+                        <td>{{ evento.registrado_en }}</td>
+                        <td>{{ evento.actor_email }}</td>
+                        <td>{{ evento.accion }}</td>
+                        <td>{{ evento.tabla_objetivo }}</td>
+                        <td>{{ evento.id_objetivo }}</td>
+                        <td>{{ evento.severidad }}</td>
+                        <td>
+                            {% if evento.id %}
+                                <a class="btn btn--secundario" href="{% url 'auditoria_detalle' evento.id %}">Ver</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="7">No hay eventos para mostrar.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+{% endblock %}

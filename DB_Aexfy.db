@@ -1,0 +1,3032 @@
+-- 1. LIMPIEZA INICIAL (Necesaria para aplicar los cambios de regex)
+drop schema if exists aexfy cascade;
+
+-- 2. TU SCRIPT ORIGINAL (Con las 3 correcciones aplicadas)
+create extension if not exists "pgcrypto";
+create schema if not exists aexfy;
+
+-- Catalogos base de segmentos, regiones y normativas
+create table if not exists aexfy.segmentos_industriales (
+    id serial primary key,
+    nombre text not null unique,
+    descripcion text
+);
+
+create table if not exists aexfy.regiones_chile (
+    id serial primary key,
+    nombre text not null unique,
+    descripcion text,
+    -- Zona macro geografica para agrupar regiones (NG/NC/CT/SR/AU).
+    zona text check (zona in ('NG','NC','CT','SR','AU'))
+);
+
+create table if not exists aexfy.niveles_clasificacion_datos (
+    id serial primary key,
+    codigo text not null unique,
+    etiqueta text not null,
+    descripcion text,
+    retencion_dias integer not null check (retencion_dias >= 0)
+);
+
+create table if not exists aexfy.estandares_iso (
+    id serial primary key,
+    codigo text not null unique,
+    titulo text not null,
+    dominio text not null,
+    descripcion text
+);
+
+create table if not exists aexfy.categorias_requisitos_legales (
+    id serial primary key,
+    pais text not null default 'Chile',
+    referencia_ley text not null unique,
+    titulo text not null,
+    resumen text not null,
+    alcance text
+);
+
+  -- Clientes (empresas que arriendan software)
+  -- CORRECCIÓN 1: Regex actualizado para permitir RUT con puntos (XX.XXX.XXX-X)
+  create table if not exists aexfy.clientes (
+      id uuid primary key default gen_random_uuid(),
+      rut text not null unique check (rut ~ '^[0-9]{1,2}(\.[0-9]{3}){2}-[0-9Kk]$'), 
+      razon_social text not null,
+      nombre_fantasia text,
+      giro text,
+      segmento_id integer not null references aexfy.segmentos_industriales(id),
+      region_id integer references aexfy.regiones_chile(id),
+      -- Zona del cliente para generar el codigo interno de la empresa.
+      zona text check (zona in ('NG','NC','CT','SR','AU')),
+      region text,
+      ciudad text,
+      comuna text,
+      direccion text,
+      telefono text,
+      email text,
+      email_tributario text,
+      fecha_constitucion date,
+      estado text not null default 'activo' check (estado in ('activo','pendiente','bloqueado','cancelado')),
+      plan text not null default 'starter',
+      owner_email text,
+      seller_email text,
+      company_code text,
+      modules jsonb not null default '[]'::jsonb,
+      nivel_sla text default 'estandar',
+      categoria_riesgo text default 'media',
+      observaciones_registro text,
+      creado_en timestamptz not null default timezone('utc', now()),
+      actualizado_en timestamptz not null default timezone('utc', now())
+  );
+
+-- Sucursales / centros por cliente
+create table if not exists aexfy.sucursales (
+    id uuid primary key default gen_random_uuid(),
+    cliente_id uuid not null references aexfy.clientes(id) on delete cascade,
+    nombre text not null,
+    ubicacion text,
+    region_id integer references aexfy.regiones_chile(id),
+    ciudad text,
+    comuna text,
+    direccion text,
+    telefono text,
+    estado text not null default 'activo' check (estado in ('activo','inactivo','cerrado')),
+    creado_en timestamptz not null default timezone('utc', now()),
+    actualizado_en timestamptz not null default timezone('utc', now())
+);
+
+-- Usuarios del sistema (staff AEXFY y usuarios clientes)
+-- CORRECCIÓN 2: Regex actualizado para permitir RUT con puntos
+create table if not exists aexfy.usuarios (
+    id uuid primary key default gen_random_uuid(),
+    auth_id text unique,
+    email text not null unique,
+    nombres text not null,
+    apellidos text not null,
+    -- Segundo nombre y apellido materno para staff.
+    segundo_nombre text,
+    apellido_materno text,
+    -- RUT obligatorio y unico como identificador visual; debe respetar el formato del sistema.
+    rut text not null unique check (rut ~ '^[0-9]{1,2}(\.[0-9]{3}){2}-[0-9Kk]$'),
+    tipo_usuario text not null check (tipo_usuario in ('staff_aexfy','propietario_cliente','trabajador_cliente')),
+    cliente_id uuid references aexfy.clientes(id),
+    sucursal_id uuid references aexfy.sucursales(id),
+    estado text not null default 'activo' check (estado in ('activo','inactivo','suspendido')),
+    -- Telefono principal unico y telefono de emergencia.
+    telefono text,
+    telefono_emergencia text,
+    -- Zona operacional para aislar permisos (NG/NC/CT/SR/AU).
+    zona text check (zona in ('NG','NC','CT','SR','AU')),
+    metadatos jsonb not null default '{}'::jsonb,
+    creado_en timestamptz not null default timezone('utc', now()),
+    actualizado_en timestamptz not null default timezone('utc', now())
+);
+
+-- Vista publica minima para login; se consulta desde cuentas/services.py en Django.
+create or replace view public.v_usuarios_login as
+  select
+      id,
+      auth_id,
+      email,
+      rut,
+      estado,
+      nombres,
+      apellidos,
+      zona,
+      tipo_usuario
+  from aexfy.usuarios;
+
+-- Permite lectura controlada de la vista para anon y authenticated.
+grant select on public.v_usuarios_login to anon, authenticated;
+
+-- Roles y permisos
+create table if not exists aexfy.roles (
+    id uuid primary key default gen_random_uuid(),
+    nombre text not null unique,
+    alcance text not null check (alcance in ('admin','staff','cliente','soporte')),
+    descripcion text,
+    visibilidad text not null default 'global'
+);
+
+create table if not exists aexfy.permisos (
+    id uuid primary key default gen_random_uuid(),
+    modulo text not null,
+    accion text not null,
+    descripcion text,
+    unique(modulo, accion)
+);
+
+create table if not exists aexfy.roles_permisos (
+    rol_id uuid not null references aexfy.roles(id) on delete cascade,
+    permiso_id uuid not null references aexfy.permisos(id) on delete cascade,
+    asignado_en timestamptz not null default timezone('utc', now()),
+    primary key (rol_id, permiso_id)
+);
+
+-- Productos SaaS
+create table if not exists aexfy.productos_software (
+    id uuid primary key default gen_random_uuid(),
+    slug text not null unique,
+    nombre text not null,
+    vertical text not null,
+    descripcion text,
+    referencia_modelo_datos text,
+    estado text not null default 'activo' check (estado in ('activo','en_desarrollo','retirado')),
+    creado_en timestamptz not null default timezone('utc', now()),
+    actualizado_en timestamptz not null default timezone('utc', now())
+);
+
+create table if not exists aexfy.asignaciones_roles_usuarios (
+    id uuid primary key default gen_random_uuid(),
+    usuario_id uuid not null references aexfy.usuarios(id) on delete cascade,
+    rol_id uuid not null references aexfy.roles(id),
+    producto_id uuid references aexfy.productos_software(id),
+    sucursal_id uuid references aexfy.sucursales(id),
+    vigente_desde timestamptz not null default timezone('utc', now()),
+    vigente_hasta timestamptz,
+    notas_contexto text
+);
+
+-- Contratos y documentos legales
+create table if not exists aexfy.contratos_cliente (
+    id uuid primary key default gen_random_uuid(),
+    cliente_id uuid not null references aexfy.clientes(id) on delete cascade,
+    numero_contrato text not null unique,
+    fecha_inicio date not null,
+    fecha_fin date,
+    estado text not null default 'vigente' check (estado in ('vigente','por_renovar','terminado','anulado')),
+    nivel_sla text,
+    url_documento_firmado text,
+    notas_legales text,
+    creado_en timestamptz not null default timezone('utc', now())
+);
+
+create table if not exists aexfy.documentos_legales (
+    id uuid primary key default gen_random_uuid(),
+    contrato_id uuid references aexfy.contratos_cliente(id) on delete cascade,
+    tipo_documento text not null,
+    titulo text not null,
+    url_archivo text,
+    emitido_por text,
+    emitido_en timestamptz,
+    expira_en timestamptz,
+    cumplimiento_verificado boolean not null default false
+);
+
+-- Suscripciones
+create table if not exists aexfy.suscripciones (
+    id uuid primary key default gen_random_uuid(),
+    cliente_id uuid not null references aexfy.clientes(id) on delete cascade,
+    producto_id uuid not null references aexfy.productos_software(id),
+    contrato_id uuid references aexfy.contratos_cliente(id),
+    fecha_inicio date not null,
+    fecha_fin date,
+    estado text not null default 'activo' check (estado in ('activo','suspendido','terminado','pendiente')),
+    valor_mensual numeric(12,2) check (valor_mensual >= 0),
+    modulos jsonb not null default '[]'::jsonb,
+    configuracion jsonb not null default '{}'::jsonb,
+    creado_en timestamptz not null default timezone('utc', now())
+);
+
+-- Instancias por sucursal
+create table if not exists aexfy.instancias (
+    id uuid primary key default gen_random_uuid(),
+    suscripcion_id uuid not null references aexfy.suscripciones(id) on delete cascade,
+    sucursal_id uuid references aexfy.sucursales(id),
+    url_conexion text,
+    region_despliegue text,
+    entorno text not null default 'produccion',
+    estado text not null default 'activo' check (estado in ('activo','mantenimiento','desactivado')),
+    metadatos jsonb not null default '{}'::jsonb,
+    creado_en timestamptz not null default timezone('utc', now()),
+    actualizado_en timestamptz not null default timezone('utc', now())
+);
+
+-- Configuracion del portal AEXFY Owner
+create table if not exists aexfy.configuraciones_owner (
+    cliente_id uuid primary key references aexfy.clientes(id) on delete cascade,
+    url_portal text,
+    marca jsonb not null default '{}'::jsonb,
+    configuracion_seguridad jsonb not null default '{}'::jsonb,
+    sucursal_predeterminada uuid references aexfy.sucursales(id),
+    creado_en timestamptz not null default timezone('utc', now()),
+    actualizado_en timestamptz not null default timezone('utc', now())
+);
+
+-- Tickets e incidencias
+create table if not exists aexfy.tickets_soporte (
+    id uuid primary key default gen_random_uuid(),
+    cliente_id uuid references aexfy.clientes(id),
+    sucursal_id uuid references aexfy.sucursales(id),
+    creado_por uuid references aexfy.usuarios(id),
+    asignado_a uuid references aexfy.usuarios(id),
+    tipo_ticket text not null,
+    prioridad text not null check (prioridad in ('alta','media','baja')),
+    estado text not null default 'abierto' check (estado in ('abierto','en_progreso','resuelto','cerrado')),
+    resumen text not null,
+    detalles text,
+    resolucion text,
+    abierto_en timestamptz not null default timezone('utc', now()),
+    cerrado_en timestamptz
+);
+
+-- Solicitudes y flujo de aprobaciones
+create table if not exists aexfy.solicitudes (
+    id uuid primary key default gen_random_uuid(),
+    tipo_solicitud text not null,
+    enviado_por uuid references aexfy.usuarios(id),
+    cliente_objetivo uuid references aexfy.clientes(id),
+    sucursal_objetivo uuid references aexfy.sucursales(id),
+    producto_objetivo uuid references aexfy.productos_software(id),
+    descripcion text,
+    estado text not null default 'nuevo' check (estado in ('nuevo','aprobado','rechazado','en_revision','completado')),
+    prioridad text not null default 'normal',
+    asignado_a uuid references aexfy.usuarios(id),
+    metadatos jsonb not null default '{}'::jsonb,
+    creado_en timestamptz not null default timezone('utc', now()),
+    resuelto_en timestamptz
+);
+
+-- Auditoria
+create table if not exists aexfy.eventos_auditoria (
+    id uuid primary key default gen_random_uuid(),
+    actor_id uuid references aexfy.usuarios(id),
+    actor_email text,
+    accion text not null,
+    tabla_objetivo text,
+    id_objetivo text,
+    registrado_en timestamptz not null default timezone('utc', now()),
+    severidad text not null default 'media' check (severidad in ('baja','media','alta','critica')),
+    metadatos jsonb not null default '{}'::jsonb
+);
+
+-- Indices para consultas de auditoria
+create index if not exists idx_auditoria_fecha on aexfy.eventos_auditoria(registrado_en desc);
+create index if not exists idx_auditoria_actor on aexfy.eventos_auditoria(actor_email);
+create index if not exists idx_auditoria_accion on aexfy.eventos_auditoria(accion);
+
+-- Controles y cumplimiento
+create table if not exists aexfy.controles_cumplimiento (
+    id uuid primary key default gen_random_uuid(),
+    codigo_control text not null unique,
+    descripcion text not null,
+    estandar_iso_id integer references aexfy.estandares_iso(id),
+    requisito_legal_id integer references aexfy.categorias_requisitos_legales(id),
+    rol_responsable text,
+    frecuencia text,
+    plantilla_evidencia jsonb
+);
+
+create table if not exists aexfy.controles_ejecutados (
+    id uuid primary key default gen_random_uuid(),
+    control_id uuid not null references aexfy.controles_cumplimiento(id) on delete cascade,
+    cliente_id uuid references aexfy.clientes(id),
+    sucursal_id uuid references aexfy.sucursales(id),
+    ejecutado_por uuid references aexfy.usuarios(id),
+    estado text not null default 'pendiente' check (estado in ('pendiente','cumple','incumple')),
+    hallazgos text,
+    ejecutado_en timestamptz not null default timezone('utc', now()),
+    proxima_revision_en timestamptz
+);
+
+create table if not exists aexfy.evidencias_cumplimiento (
+    id uuid primary key default gen_random_uuid(),
+    control_ejecutado_id uuid not null references aexfy.controles_ejecutados(id) on delete cascade,
+    url_documento text,
+    resumen text,
+    subido_por uuid references aexfy.usuarios(id),
+    subido_en timestamptz not null default timezone('utc', now())
+);
+
+-- Reglas de validaciun de formularios
+create table if not exists aexfy.reglas_validacion (
+    id serial primary key,
+    tabla_destino text not null,
+    columna_destino text not null,
+    patron_regex text,
+    descripcion text,
+    creado_en timestamptz not null default timezone('utc', now()),
+    unique(tabla_destino, columna_destino)
+);
+
+-- CORRECCIÓN 3: Agregar la tabla REQUESTS que faltaba en tu script original
+create table if not exists aexfy.requests (
+    id uuid primary key default gen_random_uuid(),
+    request_type text,
+    status text,
+    metadata jsonb,
+    created_at timestamptz default now(),
+    submitted_by uuid,
+    -- Datos de revision para aprobaciones y rechazos.
+    reviewed_by uuid references aexfy.usuarios(id),
+    reviewed_at timestamptz,
+    decision_note text
+);
+
+-- Indices basicos para solicitudes
+create index if not exists idx_requests_status on aexfy.requests(status);
+create index if not exists idx_requests_type on aexfy.requests(request_type);
+
+insert into aexfy.reglas_validacion (tabla_destino, columna_destino, patron_regex, descripcion)
+values
+('clientes','rut','^[0-9]{1,2}(\.[0-9]{3}){2}-[0-9Kk]$','RUT valido con puntos'), -- AJUSTADO PARA COINCIDIR CON LA TABLA
+('usuarios','email','^[^@]+@[^@]+\.[^@]+$','Correo con formato basico'),
+('usuarios','telefono','^\+56 9 \d{4} \d{4}$','Telefono con formato +56 9 1234 5678'),
+('tickets_soporte','prioridad','^(alta|media|baja)$','Prioridad controlada para tickets')
+on conflict (tabla_destino, columna_destino) do nothing;
+
+-- Requisitos legales chilenos predefinidos
+insert into aexfy.categorias_requisitos_legales (pais, referencia_ley, titulo, resumen, alcance)
+values
+('Chile','Ley 19.628','Proteccion de Datos Personales','Obliga a proteger la informacion personal y obtener consentimiento claro','Administracion de clientes y empleados'),
+('Chile','Ley 20.393','Responsabilidad Penal de las Personas Juridicas','Implica controles anti soborno, fraude y lavado de activos','Gobierno corporativo y auditoria'),
+('Chile','Ley 21.459','Derechos del Consumidor en Comercio Electronico','Requiere informacion clara, contratos y derecho a retracto','Contratos y portal Owner')
+on conflict (referencia_ley) do nothing;
+
+-- Registro de riesgos e incidentes
+create table if not exists aexfy.entradas_riesgo (
+    id uuid primary key default gen_random_uuid(),
+    cliente_id uuid references aexfy.clientes(id),
+    titulo text not null,
+    descripcion text,
+    impacto text,
+    probabilidad text,
+    mitigacion text,
+    responsable text,
+    estado text not null default 'abierto' check (estado in ('abierto','en_progreso','cerrado')),
+    creado_en timestamptz not null default timezone('utc', now()),
+    actualizado_en timestamptz not null default timezone('utc', now())
+);
+
+-- Auditorias ISO planificadas
+create table if not exists aexfy.auditorias_iso (
+    id uuid primary key default gen_random_uuid(),
+    estandar_iso_id integer not null references aexfy.estandares_iso(id),
+    alcance text not null,
+    programada_en timestamptz not null,
+    completada_en timestamptz,
+    resultado text,
+    notas text
+);
+
+-- Indices
+create index if not exists idx_clientes_rut on aexfy.clientes(rut);
+create unique index if not exists idx_clientes_company_code on aexfy.clientes(company_code);
+create index if not exists idx_usuarios_email on aexfy.usuarios(email);
+create unique index if not exists idx_usuarios_telefono on aexfy.usuarios(telefono);
+create index if not exists idx_tickets_estado on aexfy.tickets_soporte(estado);
+create index if not exists idx_controles_estado on aexfy.controles_ejecutados(estado);
+
+-- Tabla de consecutivos por zona para generar el codigo interno de empresas.
+create table if not exists aexfy.consecutivos_zona (
+    zona text primary key check (zona in ('NG','NC','CT','SR','AU')),
+    ultimo_numero bigint not null default 0,
+    actualizado_en timestamptz not null default timezone('utc', now())
+);
+
+-- Inicializa las zonas disponibles si no existen.
+insert into aexfy.consecutivos_zona (zona)
+values ('NG'),('NC'),('CT'),('SR'),('AU')
+on conflict (zona) do nothing;
+
+-- Asigna zona a regiones existentes segun macrozona de Chile.
+update aexfy.regiones_chile
+set zona = 'NG'
+where zona is null
+  and (
+    nombre ilike '%arica%'
+    or nombre ilike '%parinacota%'
+    or nombre ilike '%tarapac%'
+    or nombre ilike '%antofagasta%'
+  );
+
+update aexfy.regiones_chile
+set zona = 'NC'
+where zona is null
+  and (
+    nombre ilike '%atacama%'
+    or nombre ilike '%coquimbo%'
+  );
+
+update aexfy.regiones_chile
+set zona = 'CT'
+where zona is null
+  and (
+    nombre ilike '%valpara%'
+    or nombre ilike '%metropolitana%'
+    or nombre ilike '%higgins%'
+    or nombre ilike '%maule%'
+  );
+
+update aexfy.regiones_chile
+set zona = 'SR'
+where zona is null
+  and (
+    nombre ilike '%ñuble%'
+    or nombre ilike '%nuble%'
+    or nombre ilike '%biob%'
+    or nombre ilike '%araucan%'
+    or nombre ilike '%rios%'
+    or nombre ilike '%lagos%'
+  );
+
+update aexfy.regiones_chile
+set zona = 'AU'
+where zona is null
+  and (
+    nombre ilike '%aysen%'
+    or nombre ilike '%aisen%'
+    or nombre ilike '%magallanes%'
+    or nombre ilike '%antartica%'
+  );
+
+-- Funcion para obtener la zona por nombre de region.
+create or replace function aexfy.obtener_zona_por_region_nombre(p_region text)
+returns text
+language plpgsql
+stable
+as $$
+begin
+    if p_region is null or p_region = '' then
+        return null;
+    end if;
+
+    if p_region ilike '%arica%'
+       or p_region ilike '%parinacota%'
+       or p_region ilike '%tarapac%'
+       or p_region ilike '%antofagasta%' then
+        return 'NG';
+    end if;
+
+    if p_region ilike '%atacama%'
+       or p_region ilike '%coquimbo%' then
+        return 'NC';
+    end if;
+
+    if p_region ilike '%valpara%'
+       or p_region ilike '%metropolitana%'
+       or p_region ilike '%higgins%'
+       or p_region ilike '%maule%' then
+        return 'CT';
+    end if;
+
+    if p_region ilike '%ñuble%'
+       or p_region ilike '%nuble%'
+       or p_region ilike '%biob%'
+       or p_region ilike '%araucan%'
+       or p_region ilike '%rios%'
+       or p_region ilike '%lagos%' then
+        return 'SR';
+    end if;
+
+    if p_region ilike '%aysen%'
+       or p_region ilike '%aisen%'
+       or p_region ilike '%magallanes%'
+       or p_region ilike '%antartica%' then
+        return 'AU';
+    end if;
+
+    return null;
+end;
+$$;
+
+comment on function aexfy.obtener_zona_por_region_nombre(text)
+is 'Devuelve la zona macro (NG/NC/CT/SR/AU) segun el nombre de la region.';
+
+-- Funcion para generar el codigo interno de empresa con prefijo de zona.
+create or replace function aexfy.generar_codigo_cliente(p_zona text)
+returns text
+language plpgsql
+as $$
+declare
+    nuevo_numero bigint;
+begin
+    if p_zona is null or p_zona = '' then
+        raise exception 'Zona requerida para generar codigo de empresa.';
+    end if;
+
+    update aexfy.consecutivos_zona
+    set ultimo_numero = ultimo_numero + 1,
+        actualizado_en = timezone('utc', now())
+    where zona = p_zona
+    returning ultimo_numero into nuevo_numero;
+
+    if nuevo_numero is null then
+        insert into aexfy.consecutivos_zona (zona, ultimo_numero)
+        values (p_zona, 1)
+        returning ultimo_numero into nuevo_numero;
+    end if;
+
+    return p_zona || '-' || lpad(nuevo_numero::text, 6, '0');
+end;
+$$;
+
+comment on function aexfy.generar_codigo_cliente(text)
+is 'Genera un codigo interno de empresa con prefijo de zona (NG/NC/CT/SR/AU).';
+
+-- Trigger para asignar zona y company_code automaticamente al crear clientes.
+create or replace function aexfy.trg_clientes_generar_codigo()
+returns trigger
+language plpgsql
+as $$
+declare
+    v_zona text;
+begin
+    if new.zona is null or new.zona = '' then
+        if new.region_id is not null then
+            select zona into v_zona
+            from aexfy.regiones_chile
+            where id = new.region_id;
+        end if;
+
+        if (v_zona is null or v_zona = '') and new.region is not null then
+            v_zona := aexfy.obtener_zona_por_region_nombre(new.region);
+        end if;
+
+        new.zona := v_zona;
+    end if;
+
+    if new.company_code is null or new.company_code = '' then
+        new.company_code := aexfy.generar_codigo_cliente(new.zona);
+    end if;
+
+    return new;
+end;
+$$;
+
+comment on function aexfy.trg_clientes_generar_codigo()
+is 'Asigna zona y company_code a clientes usando region o zona.';
+
+drop trigger if exists clientes_generar_codigo on aexfy.clientes;
+create trigger clientes_generar_codigo
+before insert on aexfy.clientes
+for each row
+execute function aexfy.trg_clientes_generar_codigo();
+
+
+-- FUNCIONES PUBLICAS PARA EMPRESAS (sin exponer el esquema aexfy)
+create or replace function public.listar_empresas_admin(
+    p_busqueda text,
+    p_estado text,
+    p_plan text,
+    p_zona text,
+    p_limit integer,
+    p_offset integer
+)
+returns table (
+    id uuid,
+    rut text,
+    razon_social text,
+    nombre_fantasia text,
+    giro text,
+    segmento_id integer,
+    region_id integer,
+    region text,
+    ciudad text,
+    comuna text,
+    direccion text,
+    telefono text,
+    email text,
+    estado text,
+    plan text,
+    owner_email text,
+    seller_email text,
+    company_code text,
+    zona text
+)
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select
+        c.id,
+        c.rut,
+        c.razon_social,
+        c.nombre_fantasia,
+        c.giro,
+        c.segmento_id,
+        c.region_id,
+        c.region,
+        c.ciudad,
+        c.comuna,
+        c.direccion,
+        c.telefono,
+        c.email,
+        c.estado,
+        c.plan,
+        c.owner_email,
+        c.seller_email,
+        c.company_code,
+        c.zona
+    from aexfy.clientes c
+    where
+        (p_estado is null or p_estado = '' or c.estado = p_estado)
+        and (p_plan is null or p_plan = '' or c.plan = p_plan)
+        and (p_zona is null or p_zona = '' or c.zona = p_zona)
+        and (
+            p_busqueda is null
+            or p_busqueda = ''
+            or c.rut ilike '%' || p_busqueda || '%'
+            or c.razon_social ilike '%' || p_busqueda || '%'
+            or c.nombre_fantasia ilike '%' || p_busqueda || '%'
+            or c.email ilike '%' || p_busqueda || '%'
+        )
+    order by c.creado_en desc
+    limit greatest(p_limit, 1)
+    offset greatest(p_offset, 0);
+end;
+$$;
+
+comment on function public.listar_empresas_admin(
+    text, text, text, text, integer, integer
+)
+is 'Lista empresas con filtros para el modulo admin sin exponer aexfy.';
+
+grant execute on function public.listar_empresas_admin(
+    text, text, text, text, integer, integer
+) to service_role;
+
+create or replace function public.obtener_empresa_admin(
+    p_empresa_id uuid
+)
+returns table (
+    id uuid,
+    rut text,
+    razon_social text,
+    nombre_fantasia text,
+    giro text,
+    segmento_id integer,
+    region_id integer,
+    region text,
+    ciudad text,
+    comuna text,
+    direccion text,
+    telefono text,
+    email text,
+    estado text,
+    plan text,
+    owner_email text,
+    seller_email text,
+    company_code text,
+    zona text
+)
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select
+        c.id,
+        c.rut,
+        c.razon_social,
+        c.nombre_fantasia,
+        c.giro,
+        c.segmento_id,
+        c.region_id,
+        c.region,
+        c.ciudad,
+        c.comuna,
+        c.direccion,
+        c.telefono,
+        c.email,
+        c.estado,
+        c.plan,
+        c.owner_email,
+        c.seller_email,
+        c.company_code,
+        c.zona
+    from aexfy.clientes c
+    where c.id = p_empresa_id;
+end;
+$$;
+
+comment on function public.obtener_empresa_admin(uuid)
+is 'Obtiene una empresa para editarla desde el modulo admin sin exponer aexfy.';
+
+grant execute on function public.obtener_empresa_admin(uuid) to service_role;
+
+create or replace function public.crear_empresa_admin(
+    p_rut text,
+    p_razon_social text,
+    p_nombre_fantasia text,
+    p_giro text,
+    p_segmento_id integer,
+    p_region_id integer,
+    p_region text,
+    p_ciudad text,
+    p_comuna text,
+    p_direccion text,
+    p_telefono text,
+    p_email text,
+    p_estado text,
+    p_plan text,
+    p_owner_email text,
+    p_seller_email text,
+    p_zona text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_empresa_id uuid;
+    v_company_code text;
+begin
+    if exists (select 1 from aexfy.clientes where rut = p_rut) then
+        raise exception 'El RUT ya esta registrado.';
+    end if;
+
+    insert into aexfy.clientes (
+        rut,
+        razon_social,
+        nombre_fantasia,
+        giro,
+        segmento_id,
+        region_id,
+        region,
+        ciudad,
+        comuna,
+        direccion,
+        telefono,
+        email,
+        estado,
+        plan,
+        owner_email,
+        seller_email,
+        zona
+    )
+    values (
+        p_rut,
+        p_razon_social,
+        nullif(p_nombre_fantasia, ''),
+        nullif(p_giro, ''),
+        p_segmento_id,
+        p_region_id,
+        nullif(p_region, ''),
+        nullif(p_ciudad, ''),
+        nullif(p_comuna, ''),
+        nullif(p_direccion, ''),
+        nullif(p_telefono, ''),
+        nullif(p_email, ''),
+        coalesce(p_estado, 'activo'),
+        coalesce(p_plan, 'starter'),
+        nullif(p_owner_email, ''),
+        nullif(p_seller_email, ''),
+        nullif(p_zona, '')
+    )
+    returning id, company_code into v_empresa_id, v_company_code;
+
+    return jsonb_build_object('empresa_id', v_empresa_id, 'company_code', v_company_code);
+end;
+$$;
+
+comment on function public.crear_empresa_admin(
+    text, text, text, text, integer, integer, text, text, text, text, text, text, text, text, text, text, text
+)
+is 'Crea empresas en aexfy y genera el codigo interno por zona.';
+
+grant execute on function public.crear_empresa_admin(
+    text, text, text, text, integer, integer, text, text, text, text, text, text, text, text, text, text, text
+) to service_role;
+
+create or replace function public.crear_empresa_con_owner_admin(
+    p_rut text,
+    p_razon_social text,
+    p_nombre_fantasia text,
+    p_giro text,
+    p_segmento_id integer,
+    p_region_id integer,
+    p_region text,
+    p_ciudad text,
+    p_comuna text,
+    p_direccion text,
+    p_telefono text,
+    p_email text,
+    p_estado text,
+    p_plan text,
+    p_owner_email text,
+    p_seller_email text,
+    p_zona text,
+    p_owner_auth_id text,
+    p_owner_rut text,
+    p_owner_primer_nombre text,
+    p_owner_segundo_nombre text,
+    p_owner_apellido_paterno text,
+    p_owner_apellido_materno text,
+    p_owner_telefono text,
+    p_owner_tipo_usuario text,
+    p_owner_rol text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_empresa_id uuid;
+    v_company_code text;
+    v_usuario_id uuid;
+    v_nombres text;
+    v_apellidos text;
+    v_rol_id uuid;
+begin
+    if exists (select 1 from aexfy.clientes where rut = p_rut) then
+        raise exception 'El RUT de empresa ya esta registrado.';
+    end if;
+
+    if exists (select 1 from aexfy.usuarios where rut = p_owner_rut) then
+        raise exception 'El RUT del duenio ya esta registrado.';
+    end if;
+
+    if exists (select 1 from aexfy.usuarios where email = p_owner_email) then
+        raise exception 'El correo del duenio ya esta registrado.';
+    end if;
+
+    -- Permite el correo si ya existe en Auth y corresponde al mismo auth_id invitado.
+    if exists (
+        select 1
+        from auth.users
+        where email = p_owner_email
+          and id::text <> coalesce(p_owner_auth_id, '')
+    ) then
+        raise exception 'El correo del duenio ya esta registrado.';
+    end if;
+
+    if p_owner_telefono is not null and p_owner_telefono <> '' then
+        if exists (select 1 from aexfy.usuarios where telefono = p_owner_telefono) then
+            raise exception 'El telefono del duenio ya esta registrado.';
+        end if;
+    end if;
+
+    insert into aexfy.clientes (
+        rut,
+        razon_social,
+        nombre_fantasia,
+        giro,
+        segmento_id,
+        region_id,
+        region,
+        ciudad,
+        comuna,
+        direccion,
+        telefono,
+        email,
+        estado,
+        plan,
+        owner_email,
+        seller_email,
+        zona
+    )
+    values (
+        p_rut,
+        p_razon_social,
+        nullif(p_nombre_fantasia, ''),
+        nullif(p_giro, ''),
+        p_segmento_id,
+        p_region_id,
+        nullif(p_region, ''),
+        nullif(p_ciudad, ''),
+        nullif(p_comuna, ''),
+        nullif(p_direccion, ''),
+        nullif(p_telefono, ''),
+        nullif(p_email, ''),
+        coalesce(p_estado, 'activo'),
+        coalesce(p_plan, 'starter'),
+        nullif(p_owner_email, ''),
+        nullif(p_seller_email, ''),
+        nullif(p_zona, '')
+    )
+    returning id, company_code into v_empresa_id, v_company_code;
+
+    v_nombres := trim(coalesce(p_owner_primer_nombre, '') || ' ' || coalesce(p_owner_segundo_nombre, ''));
+    v_apellidos := trim(coalesce(p_owner_apellido_paterno, '') || ' ' || coalesce(p_owner_apellido_materno, ''));
+
+    insert into aexfy.usuarios (
+        auth_id,
+        email,
+        nombres,
+        apellidos,
+        segundo_nombre,
+        apellido_materno,
+        rut,
+        tipo_usuario,
+        cliente_id,
+        estado,
+        telefono,
+        metadatos
+    )
+    values (
+        p_owner_auth_id,
+        p_owner_email,
+        v_nombres,
+        v_apellidos,
+        nullif(p_owner_segundo_nombre, ''),
+        nullif(p_owner_apellido_materno, ''),
+        p_owner_rut,
+        coalesce(p_owner_tipo_usuario, 'propietario_cliente'),
+        v_empresa_id,
+        'activo',
+        p_owner_telefono,
+        jsonb_build_object(
+            'role', p_owner_rol,
+            'roles', array[p_owner_rol]::text[],
+            'full_name', trim(v_nombres || ' ' || v_apellidos)
+        )
+    )
+    returning id into v_usuario_id;
+
+    insert into aexfy.roles (nombre, alcance, descripcion, visibilidad)
+    values (
+        p_owner_rol,
+        'cliente',
+        'Rol de duenio de empresa',
+        'global'
+    )
+    on conflict (nombre) do update
+    set
+        alcance = excluded.alcance,
+        visibilidad = excluded.visibilidad,
+        descripcion = coalesce(aexfy.roles.descripcion, excluded.descripcion)
+    returning id into v_rol_id;
+
+    insert into aexfy.asignaciones_roles_usuarios (usuario_id, rol_id)
+    values (v_usuario_id, v_rol_id);
+
+    return jsonb_build_object(
+        'empresa_id', v_empresa_id,
+        'company_code', v_company_code,
+        'owner_usuario_id', v_usuario_id
+    );
+end;
+$$;
+
+comment on function public.crear_empresa_con_owner_admin(
+    text, text, text, text, integer, integer, text, text, text, text, text, text, text, text, text, text, text, text,
+    text, text, text, text, text, text, text, text
+)
+is 'Crea empresa y usuario duenio en una sola operacion.';
+
+grant execute on function public.crear_empresa_con_owner_admin(
+    text, text, text, text, integer, integer, text, text, text, text, text, text, text, text, text, text, text, text,
+    text, text, text, text, text, text, text, text
+) to service_role;
+
+
+create or replace function public.actualizar_empresa_admin(
+    p_empresa_id uuid,
+    p_rut text,
+    p_razon_social text,
+    p_nombre_fantasia text,
+    p_giro text,
+    p_segmento_id integer,
+    p_region_id integer,
+    p_region text,
+    p_ciudad text,
+    p_comuna text,
+    p_direccion text,
+    p_telefono text,
+    p_email text,
+    p_estado text,
+    p_plan text,
+    p_owner_email text,
+    p_seller_email text,
+    p_zona text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_company_code text;
+begin
+    if exists (
+        select 1 from aexfy.clientes
+        where rut = p_rut and id <> p_empresa_id
+    ) then
+        raise exception 'El RUT ya esta registrado.';
+    end if;
+
+    update aexfy.clientes
+    set
+        rut = p_rut,
+        razon_social = p_razon_social,
+        nombre_fantasia = nullif(p_nombre_fantasia, ''),
+        giro = nullif(p_giro, ''),
+        segmento_id = p_segmento_id,
+        region_id = p_region_id,
+        region = nullif(p_region, ''),
+        ciudad = nullif(p_ciudad, ''),
+        comuna = nullif(p_comuna, ''),
+        direccion = nullif(p_direccion, ''),
+        telefono = nullif(p_telefono, ''),
+        email = nullif(p_email, ''),
+        estado = coalesce(p_estado, 'activo'),
+        plan = coalesce(p_plan, 'starter'),
+        owner_email = nullif(p_owner_email, ''),
+        seller_email = nullif(p_seller_email, ''),
+        zona = case
+            when p_zona is null or p_zona = '' then zona
+            else p_zona
+        end,
+        actualizado_en = timezone('utc', now())
+    where id = p_empresa_id
+    returning company_code into v_company_code;
+
+    return jsonb_build_object('empresa_id', p_empresa_id, 'company_code', v_company_code);
+end;
+$$;
+
+comment on function public.actualizar_empresa_admin(
+    uuid, text, text, text, text, integer, integer, text, text, text, text, text, text, text, text, text, text, text
+)
+is 'Actualiza empresas desde el modulo admin sin exponer aexfy.';
+
+grant execute on function public.actualizar_empresa_admin(
+    uuid, text, text, text, text, integer, integer, text, text, text, text, text, text, text, text, text, text, text
+) to service_role;
+
+-- Elimina una empresa y datos asociados (usuarios cliente, auth y registros dependientes).
+create or replace function public.eliminar_empresa_admin(
+    p_empresa_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_rut text;
+    v_email text;
+    v_usuario_ids uuid[];
+    v_auth_ids text[];
+    v_auth_id text;
+    v_auth_uuid uuid;
+    v_usuarios_eliminados integer := 0;
+begin
+    select rut, email
+    into v_rut, v_email
+    from aexfy.clientes
+    where id = p_empresa_id;
+
+    if v_rut is null then
+        raise exception 'Empresa no encontrada.';
+    end if;
+
+    select array_agg(id), array_agg(auth_id)
+    into v_usuario_ids, v_auth_ids
+    from aexfy.usuarios
+    where cliente_id = p_empresa_id;
+
+    delete from aexfy.tickets_soporte where cliente_id = p_empresa_id;
+    delete from aexfy.solicitudes where cliente_objetivo = p_empresa_id;
+    delete from aexfy.entradas_riesgo where cliente_id = p_empresa_id;
+    delete from aexfy.controles_ejecutados where cliente_id = p_empresa_id;
+
+    if v_usuario_ids is not null then
+        delete from aexfy.asignaciones_roles_usuarios
+        where usuario_id = any(v_usuario_ids);
+    end if;
+
+    if v_auth_ids is not null then
+        foreach v_auth_id in array v_auth_ids loop
+            if v_auth_id is null or v_auth_id = '' then
+                continue;
+            end if;
+            begin
+                v_auth_uuid := v_auth_id::uuid;
+            exception when invalid_text_representation then
+                v_auth_uuid := null;
+            end;
+            if v_auth_uuid is not null then
+                delete from auth.identities where user_id = v_auth_uuid;
+                delete from auth.refresh_tokens where user_id = v_auth_uuid;
+                delete from auth.sessions where user_id = v_auth_uuid;
+                delete from auth.users where id = v_auth_uuid;
+            end if;
+        end loop;
+    end if;
+
+    delete from aexfy.usuarios
+    where cliente_id = p_empresa_id;
+    get diagnostics v_usuarios_eliminados = row_count;
+
+    delete from aexfy.clientes
+    where id = p_empresa_id;
+
+    return jsonb_build_object(
+        'empresa_id', p_empresa_id,
+        'rut', v_rut,
+        'email', v_email,
+        'usuarios_eliminados', v_usuarios_eliminados
+    );
+end;
+$$;
+
+comment on function public.eliminar_empresa_admin(uuid)
+is 'Elimina empresa y datos asociados desde el modulo admin.';
+
+grant execute on function public.eliminar_empresa_admin(uuid) to service_role;
+
+create or replace function public.cambios_masivos_empresas(
+    p_empresa_ids uuid[],
+    p_accion text,
+    p_valor text
+)
+returns integer
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_actualizados integer := 0;
+begin
+    if p_accion = 'estado' then
+        update aexfy.clientes
+        set
+            estado = p_valor,
+            actualizado_en = timezone('utc', now())
+        where id = any(p_empresa_ids);
+        get diagnostics v_actualizados = row_count;
+        return v_actualizados;
+    end if;
+
+    if p_accion = 'plan' then
+        update aexfy.clientes
+        set
+            plan = p_valor,
+            actualizado_en = timezone('utc', now())
+        where id = any(p_empresa_ids);
+        get diagnostics v_actualizados = row_count;
+        return v_actualizados;
+    end if;
+
+    if p_accion = 'zona' then
+        update aexfy.clientes
+        set
+            zona = p_valor,
+            actualizado_en = timezone('utc', now())
+        where id = any(p_empresa_ids);
+        get diagnostics v_actualizados = row_count;
+        return v_actualizados;
+    end if;
+
+    raise exception 'Accion masiva no soportada.';
+end;
+$$;
+
+comment on function public.cambios_masivos_empresas(uuid[], text, text)
+is 'Aplica cambios masivos de estado, plan o zona sin exponer aexfy.';
+
+grant execute on function public.cambios_masivos_empresas(uuid[], text, text) to service_role;
+
+
+-- Listas auxiliares para selects en el modulo de empresas.
+create or replace function public.listar_segmentos_admin()
+returns table (
+    id integer,
+    nombre text,
+    descripcion text
+)
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select s.id, s.nombre, s.descripcion
+    from aexfy.segmentos_industriales s
+    order by s.nombre asc;
+end;
+$$;
+
+grant execute on function public.listar_segmentos_admin() to service_role;
+
+create or replace function public.listar_regiones_admin()
+returns table (
+    id integer,
+    nombre text,
+    zona text
+)
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select r.id, r.nombre, r.zona
+    from aexfy.regiones_chile r
+    order by r.id asc;
+end;
+$$;
+
+grant execute on function public.listar_regiones_admin() to service_role;
+
+-- Roles del usuario autenticado para validar autorizacion en empresas.
+create or replace function public.obtener_roles_usuario_admin(
+    p_usuario_id uuid
+)
+returns table (
+    roles text[]
+)
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select coalesce(
+        array_agg(distinct r.nombre) filter (where r.nombre is not null),
+        (
+            select array_agg(elem)
+            from jsonb_array_elements_text(u.metadatos->'roles') as elem
+        ),
+        array[]::text[]
+    )
+    from aexfy.usuarios u
+    left join aexfy.asignaciones_roles_usuarios aru on aru.usuario_id = u.id
+    left join aexfy.roles r on r.id = aru.rol_id
+    where u.id = p_usuario_id
+    group by u.id, u.metadatos;
+end;
+$$;
+
+grant execute on function public.obtener_roles_usuario_admin(uuid) to service_role;
+
+-- Crea solicitud de empresa cuando se requiere autorizacion.
+create or replace function public.crear_solicitud_empresa_admin(
+    p_request_type text,
+    p_status text,
+    p_metadata jsonb,
+    p_submitted_by uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_request_id uuid;
+begin
+    insert into aexfy.requests (
+        request_type,
+        status,
+        metadata,
+        submitted_by,
+        created_at
+    )
+    values (
+        p_request_type,
+        p_status,
+        p_metadata,
+        p_submitted_by,
+        timezone('utc', now())
+    )
+    returning id into v_request_id;
+
+    return jsonb_build_object('request_id', v_request_id);
+end;
+$$;
+
+grant execute on function public.crear_solicitud_empresa_admin(text, text, jsonb, uuid) to service_role;
+
+-- Crea solicitudes genericas para staff o futuras operaciones.
+create or replace function public.crear_solicitud_admin(
+    p_request_type text,
+    p_status text,
+    p_metadata jsonb,
+    p_submitted_by uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_request_id uuid;
+begin
+    insert into aexfy.requests (
+        request_type,
+        status,
+        metadata,
+        submitted_by,
+        created_at
+    )
+    values (
+        p_request_type,
+        p_status,
+        p_metadata,
+        p_submitted_by,
+        timezone('utc', now())
+    )
+    returning id into v_request_id;
+
+    return jsonb_build_object('request_id', v_request_id);
+end;
+$$;
+
+comment on function public.crear_solicitud_admin(text, text, jsonb, uuid)
+is 'Crea solicitudes genericas (staff, empresa u otras) para aprobaciones.';
+
+grant execute on function public.crear_solicitud_admin(text, text, jsonb, uuid) to service_role;
+
+-- Lista solicitudes para el modulo admin con filtros basicos.
+create or replace function public.listar_solicitudes_admin(
+    p_estado text,
+    p_tipo text,
+    p_limit integer,
+    p_offset integer
+)
+returns table (
+    id uuid,
+    request_type text,
+    status text,
+    created_at timestamptz,
+    submitted_by uuid,
+    submitted_email text,
+    reviewed_by uuid,
+    reviewed_email text,
+    decision_note text,
+    metadata jsonb
+)
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select
+        r.id,
+        r.request_type,
+        r.status,
+        r.created_at,
+        r.submitted_by,
+        u.email as submitted_email,
+        r.reviewed_by,
+        ru.email as reviewed_email,
+        r.decision_note,
+        r.metadata
+    from aexfy.requests r
+    left join aexfy.usuarios u on u.id = r.submitted_by
+    left join aexfy.usuarios ru on ru.id = r.reviewed_by
+    where (p_estado is null or p_estado = '' or r.status = p_estado)
+      and (p_tipo is null or p_tipo = '' or r.request_type = p_tipo)
+    order by r.created_at desc
+    limit coalesce(p_limit, 100)
+    offset coalesce(p_offset, 0);
+end;
+$$;
+
+comment on function public.listar_solicitudes_admin(text, text, integer, integer)
+is 'Lista solicitudes (requests) para aprobaciones en el modulo admin.';
+
+grant execute on function public.listar_solicitudes_admin(text, text, integer, integer) to service_role;
+
+-- Obtiene una solicitud especifica para ver detalle y aprobar/rechazar.
+create or replace function public.obtener_solicitud_admin(
+    p_request_id uuid
+)
+returns table (
+    id uuid,
+    request_type text,
+    status text,
+    created_at timestamptz,
+    submitted_by uuid,
+    submitted_email text,
+    reviewed_by uuid,
+    reviewed_email text,
+    decision_note text,
+    metadata jsonb
+)
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select
+        r.id,
+        r.request_type,
+        r.status,
+        r.created_at,
+        r.submitted_by,
+        u.email as submitted_email,
+        r.reviewed_by,
+        ru.email as reviewed_email,
+        r.decision_note,
+        r.metadata
+    from aexfy.requests r
+    left join aexfy.usuarios u on u.id = r.submitted_by
+    left join aexfy.usuarios ru on ru.id = r.reviewed_by
+    where r.id = p_request_id;
+end;
+$$;
+
+comment on function public.obtener_solicitud_admin(uuid)
+is 'Obtiene una solicitud (request) para detalle en el modulo admin.';
+
+grant execute on function public.obtener_solicitud_admin(uuid) to service_role;
+
+-- Actualiza el estado de una solicitud al aprobar o rechazar.
+create or replace function public.actualizar_solicitud_admin(
+    p_request_id uuid,
+    p_status text,
+    p_reviewer_id uuid,
+    p_decision_note text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    update aexfy.requests
+    set
+        status = p_status,
+        reviewed_by = p_reviewer_id,
+        reviewed_at = timezone('utc', now()),
+        decision_note = p_decision_note
+    where id = p_request_id;
+
+    if not found then
+        raise exception 'Solicitud no encontrada.';
+    end if;
+
+    return jsonb_build_object('request_id', p_request_id, 'status', p_status);
+end;
+$$;
+
+comment on function public.actualizar_solicitud_admin(uuid, text, uuid, text)
+is 'Actualiza estado de solicitud (requests) al aprobar o rechazar.';
+
+grant execute on function public.actualizar_solicitud_admin(uuid, text, uuid, text) to service_role;
+
+-- Registra un evento de auditoria desde el modulo admin.
+create or replace function public.registrar_evento_auditoria(
+    p_actor_id uuid,
+    p_actor_email text,
+    p_accion text,
+    p_tabla_objetivo text,
+    p_id_objetivo text,
+    p_severidad text,
+    p_metadatos jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_evento_id uuid;
+begin
+    insert into aexfy.eventos_auditoria (
+        actor_id,
+        actor_email,
+        accion,
+        tabla_objetivo,
+        id_objetivo,
+        severidad,
+        metadatos
+    )
+    values (
+        p_actor_id,
+        p_actor_email,
+        p_accion,
+        p_tabla_objetivo,
+        p_id_objetivo,
+        coalesce(p_severidad, 'media'),
+        coalesce(p_metadatos, '{}'::jsonb)
+    )
+    returning id into v_evento_id;
+
+    return jsonb_build_object('evento_id', v_evento_id);
+end;
+$$;
+
+comment on function public.registrar_evento_auditoria(uuid, text, text, text, text, text, jsonb)
+is 'Registra eventos de auditoria en aexfy.eventos_auditoria.';
+
+grant execute on function public.registrar_evento_auditoria(uuid, text, text, text, text, text, jsonb) to service_role;
+
+-- Lista eventos de auditoria con filtros basicos.
+create or replace function public.listar_auditoria_admin(
+    p_busqueda text,
+    p_severidad text,
+    p_fecha_desde timestamptz,
+    p_fecha_hasta timestamptz,
+    p_limit integer,
+    p_offset integer
+)
+returns table (
+    id uuid,
+    actor_id uuid,
+    actor_email text,
+    accion text,
+    tabla_objetivo text,
+    id_objetivo text,
+    registrado_en timestamptz,
+    severidad text,
+    metadatos jsonb
+)
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select
+        e.id,
+        e.actor_id,
+        e.actor_email,
+        e.accion,
+        e.tabla_objetivo,
+        e.id_objetivo,
+        e.registrado_en,
+        e.severidad,
+        e.metadatos
+    from aexfy.eventos_auditoria e
+    where (p_severidad is null or p_severidad = '' or e.severidad = p_severidad)
+      and (p_fecha_desde is null or e.registrado_en >= p_fecha_desde)
+      and (p_fecha_hasta is null or e.registrado_en <= p_fecha_hasta)
+      and (
+        p_busqueda is null
+        or p_busqueda = ''
+        or e.actor_email ilike ('%' || p_busqueda || '%')
+        or e.accion ilike ('%' || p_busqueda || '%')
+        or e.tabla_objetivo ilike ('%' || p_busqueda || '%')
+        or e.id_objetivo ilike ('%' || p_busqueda || '%')
+      )
+    order by e.registrado_en desc
+    limit coalesce(p_limit, 100)
+    offset coalesce(p_offset, 0);
+end;
+$$;
+
+comment on function public.listar_auditoria_admin(text, text, timestamptz, timestamptz, integer, integer)
+is 'Lista eventos de auditoria para el modulo admin.';
+
+grant execute on function public.listar_auditoria_admin(text, text, timestamptz, timestamptz, integer, integer) to service_role;
+
+-- Obtiene un evento de auditoria por id (detalle).
+create or replace function public.obtener_auditoria_admin(
+    p_evento_id uuid
+)
+returns table (
+    id uuid,
+    actor_id uuid,
+    actor_email text,
+    accion text,
+    tabla_objetivo text,
+    id_objetivo text,
+    registrado_en timestamptz,
+    severidad text,
+    metadatos jsonb
+)
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select
+        e.id,
+        e.actor_id,
+        e.actor_email,
+        e.accion,
+        e.tabla_objetivo,
+        e.id_objetivo,
+        e.registrado_en,
+        e.severidad,
+        e.metadatos
+    from aexfy.eventos_auditoria e
+    where e.id = p_evento_id;
+end;
+$$;
+
+comment on function public.obtener_auditoria_admin(uuid)
+is 'Obtiene detalle de un evento de auditoria.';
+
+grant execute on function public.obtener_auditoria_admin(uuid) to service_role;
+
+-- FUNCIONES PUBLICAS PARA STAFF (sin exponer el esquema aexfy)
+-- Valida unicidad de rut, email y telefono usando security definer.
+create or replace function public.validar_unicidad_staff(
+    p_rut text,
+    p_email text,
+    p_telefono text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    errores jsonb := '{}'::jsonb;
+begin
+    if exists (select 1 from aexfy.usuarios where rut = p_rut) then
+        errores := errores || jsonb_build_object('rut', 'El RUT ya esta registrado.');
+    end if;
+
+    if exists (select 1 from aexfy.usuarios where email = p_email)
+       or exists (select 1 from auth.users where email = p_email) then
+        errores := errores || jsonb_build_object('email', 'El correo ya esta registrado.');
+    end if;
+
+    if p_telefono is not null and p_telefono <> '' then
+        if exists (select 1 from aexfy.usuarios where telefono = p_telefono) then
+            errores := errores || jsonb_build_object('telefono', 'El numero ya esta registrado.');
+        end if;
+    end if;
+
+    return errores;
+end;
+$$;
+
+comment on function public.validar_unicidad_staff(text, text, text)
+is 'Valida unicidad de rut/email/telefono sin exponer el esquema aexfy.';
+
+grant execute on function public.validar_unicidad_staff(text, text, text) to service_role;
+
+-- Crea usuario staff, asegura rol y asigna permisos usando security definer.
+create or replace function public.crear_usuario_staff(
+    p_auth_id text,
+    p_email text,
+    p_nombres text,
+    p_apellidos text,
+    p_segundo_nombre text,
+    p_apellido_materno text,
+    p_rut text,
+    p_tipo_usuario text,
+    p_estado text,
+    p_telefono text,
+    p_telefono_emergencia text,
+    p_zona text,
+    p_rol text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_usuario_id uuid;
+    v_rol_id uuid;
+    v_full_name text;
+begin
+    if exists (select 1 from aexfy.usuarios where rut = p_rut) then
+        raise exception 'El RUT ya esta registrado.';
+    end if;
+
+    if exists (select 1 from aexfy.usuarios where email = p_email) then
+        raise exception 'El correo ya esta registrado.';
+    end if;
+
+    if p_telefono is not null and p_telefono <> '' then
+        if exists (select 1 from aexfy.usuarios where telefono = p_telefono) then
+            raise exception 'El numero ya esta registrado.';
+        end if;
+    end if;
+
+    v_full_name := trim(coalesce(p_nombres, '') || ' ' || coalesce(p_apellidos, ''));
+
+    insert into aexfy.usuarios (
+        auth_id,
+        email,
+        nombres,
+        apellidos,
+        segundo_nombre,
+        apellido_materno,
+        rut,
+        tipo_usuario,
+        estado,
+        telefono,
+        telefono_emergencia,
+        zona,
+        metadatos
+    )
+    values (
+        p_auth_id,
+        p_email,
+        p_nombres,
+        p_apellidos,
+        nullif(p_segundo_nombre, ''),
+        nullif(p_apellido_materno, ''),
+        p_rut,
+        coalesce(p_tipo_usuario, 'staff_aexfy'),
+        coalesce(p_estado, 'activo'),
+        p_telefono,
+        nullif(p_telefono_emergencia, ''),
+        p_zona,
+        jsonb_build_object(
+            'role', p_rol,
+            'roles', array[p_rol]::text[],
+            'full_name', v_full_name,
+            'zona', p_zona
+        )
+    )
+    returning id into v_usuario_id;
+
+    insert into aexfy.roles (nombre, alcance, descripcion, visibilidad)
+    values (
+        p_rol,
+        'staff',
+        'Rol importado desde roles.txt: ' || p_rol,
+        'global'
+    )
+    on conflict (nombre) do update
+    set
+        alcance = excluded.alcance,
+        visibilidad = excluded.visibilidad,
+        descripcion = coalesce(aexfy.roles.descripcion, excluded.descripcion)
+    returning id into v_rol_id;
+
+    insert into aexfy.asignaciones_roles_usuarios (usuario_id, rol_id)
+    values (v_usuario_id, v_rol_id);
+
+    return jsonb_build_object('usuario_id', v_usuario_id, 'rol_id', v_rol_id);
+end;
+$$;
+
+comment on function public.crear_usuario_staff(
+    text, text, text, text, text, text, text, text, text, text, text, text, text
+)
+is 'Crea usuario staff en aexfy y asigna rol sin exponer el esquema.';
+
+grant execute on function public.crear_usuario_staff(
+    text, text, text, text, text, text, text, text, text, text, text, text, text
+) to service_role;
+
+-- Lista usuarios con filtros desde el modulo admin sin exponer el esquema aexfy.
+create or replace function public.listar_usuarios_admin(
+    p_busqueda text,
+    p_estado text,
+    p_tipo text,
+    p_zona text,
+    p_rol text,
+    p_limit integer,
+    p_offset integer
+)
+  returns table (
+      id uuid,
+      auth_id text,
+      email text,
+      nombres text,
+      apellidos text,
+      segundo_nombre text,
+      apellido_materno text,
+      rut text,
+      tipo_usuario text,
+      estado text,
+      telefono text,
+      telefono_emergencia text,
+      zona text,
+      roles text[],
+      metadatos jsonb,
+      invite_link text
+  )
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select
+        u.id,
+        u.auth_id,
+        u.email,
+        u.nombres,
+        u.apellidos,
+        u.segundo_nombre,
+        u.apellido_materno,
+        u.rut,
+        u.tipo_usuario,
+        u.estado,
+        u.telefono,
+        u.telefono_emergencia,
+        u.zona,
+        coalesce(array_agg(distinct r.nombre) filter (where r.nombre is not null), array[]::text[]) as roles,
+        u.metadatos,
+        u.metadatos ->> 'invite_link' as invite_link
+    from aexfy.usuarios u
+    left join aexfy.asignaciones_roles_usuarios aru on aru.usuario_id = u.id
+    left join aexfy.roles r on r.id = aru.rol_id
+    where
+        (p_estado is null or p_estado = '' or u.estado = p_estado)
+        and (p_tipo is null or p_tipo = '' or u.tipo_usuario = p_tipo)
+        and (p_zona is null or p_zona = '' or u.zona = p_zona)
+        and (
+            p_rol is null
+            or p_rol = ''
+            or exists (
+                select 1
+                from aexfy.asignaciones_roles_usuarios aru2
+                join aexfy.roles r2 on r2.id = aru2.rol_id
+                where aru2.usuario_id = u.id
+                  and r2.nombre = p_rol
+            )
+        )
+        and (
+            p_busqueda is null
+            or p_busqueda = ''
+            or u.email ilike '%' || p_busqueda || '%'
+            or u.rut ilike '%' || p_busqueda || '%'
+            or u.nombres ilike '%' || p_busqueda || '%'
+            or u.apellidos ilike '%' || p_busqueda || '%'
+        )
+    group by u.id, u.metadatos
+    order by u.creado_en desc
+    limit greatest(p_limit, 1)
+    offset greatest(p_offset, 0);
+end;
+$$;
+
+comment on function public.listar_usuarios_admin(
+    text, text, text, text, text, integer, integer
+)
+is 'Lista usuarios con filtros para el modulo admin sin exponer aexfy.';
+
+grant execute on function public.listar_usuarios_admin(
+    text, text, text, text, text, integer, integer
+) to service_role;
+
+-- Obtiene un usuario especifico para edicion en el modulo admin.
+create or replace function public.obtener_usuario_admin(
+    p_usuario_id uuid
+)
+returns table (
+    id uuid,
+    auth_id text,
+    email text,
+    nombres text,
+    apellidos text,
+    segundo_nombre text,
+    apellido_materno text,
+    rut text,
+    tipo_usuario text,
+    estado text,
+    telefono text,
+    telefono_emergencia text,
+    zona text,
+    roles text[]
+)
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+begin
+    return query
+    select
+        u.id,
+        u.auth_id,
+        u.email,
+        u.nombres,
+        u.apellidos,
+        u.segundo_nombre,
+        u.apellido_materno,
+        u.rut,
+        u.tipo_usuario,
+        u.estado,
+        u.telefono,
+          u.telefono_emergencia,
+          u.zona,
+          coalesce(array_agg(distinct r.nombre) filter (where r.nombre is not null), array[]::text[]) as roles,
+          u.metadatos,
+          u.metadatos ->> 'invite_link' as invite_link
+      from aexfy.usuarios u
+      left join aexfy.asignaciones_roles_usuarios aru on aru.usuario_id = u.id
+      left join aexfy.roles r on r.id = aru.rol_id
+      where u.id = p_usuario_id
+      group by u.id;
+end;
+$$;
+
+comment on function public.obtener_usuario_admin(uuid)
+is 'Obtiene un usuario para editarlo desde el modulo admin sin exponer aexfy.';
+
+grant execute on function public.obtener_usuario_admin(uuid) to service_role;
+
+-- Actualiza un usuario, valida unicidad y sincroniza rol asignado.
+create or replace function public.actualizar_usuario_admin(
+    p_usuario_id uuid,
+    p_email text,
+    p_nombres text,
+    p_apellidos text,
+    p_segundo_nombre text,
+    p_apellido_materno text,
+    p_rut text,
+    p_tipo_usuario text,
+    p_estado text,
+    p_telefono text,
+    p_telefono_emergencia text,
+    p_zona text,
+    p_rol text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_rol_id uuid;
+begin
+    if exists (
+        select 1 from aexfy.usuarios
+        where rut = p_rut and id <> p_usuario_id
+    ) then
+        raise exception 'El RUT ya esta registrado.';
+    end if;
+
+    if exists (
+        select 1 from aexfy.usuarios
+        where email = p_email and id <> p_usuario_id
+    ) then
+        raise exception 'El correo ya esta registrado.';
+    end if;
+
+    if p_telefono is not null and p_telefono <> '' then
+        if exists (
+            select 1 from aexfy.usuarios
+            where telefono = p_telefono and id <> p_usuario_id
+        ) then
+            raise exception 'El numero ya esta registrado.';
+        end if;
+    end if;
+
+    update aexfy.usuarios
+    set
+        email = p_email,
+        nombres = p_nombres,
+        apellidos = p_apellidos,
+        segundo_nombre = nullif(p_segundo_nombre, ''),
+        apellido_materno = nullif(p_apellido_materno, ''),
+        rut = p_rut,
+        tipo_usuario = p_tipo_usuario,
+        estado = p_estado,
+        telefono = p_telefono,
+        telefono_emergencia = nullif(p_telefono_emergencia, ''),
+        zona = p_zona,
+        metadatos = coalesce(metadatos, '{}'::jsonb)
+            || jsonb_build_object(
+                'role', p_rol,
+                'roles', array[p_rol]::text[],
+                'zona', p_zona
+            ),
+        actualizado_en = timezone('utc', now())
+    where id = p_usuario_id;
+
+    insert into aexfy.roles (nombre, alcance, descripcion, visibilidad)
+    values (
+        p_rol,
+        'staff',
+        'Rol importado desde roles.txt: ' || p_rol,
+        'global'
+    )
+    on conflict (nombre) do update
+    set
+        alcance = excluded.alcance,
+        visibilidad = excluded.visibilidad,
+        descripcion = coalesce(aexfy.roles.descripcion, excluded.descripcion)
+    returning id into v_rol_id;
+
+    delete from aexfy.asignaciones_roles_usuarios
+    where usuario_id = p_usuario_id;
+
+    insert into aexfy.asignaciones_roles_usuarios (usuario_id, rol_id)
+    values (p_usuario_id, v_rol_id);
+
+    return jsonb_build_object('usuario_id', p_usuario_id, 'rol_id', v_rol_id);
+end;
+$$;
+
+comment on function public.actualizar_usuario_admin(
+    uuid, text, text, text, text, text, text, text, text, text, text, text, text
+)
+is 'Actualiza usuarios y roles desde el modulo admin sin exponer aexfy.';
+
+  grant execute on function public.actualizar_usuario_admin(
+      uuid, text, text, text, text, text, text, text, text, text, text, text, text
+  ) to service_role;
+
+  -- Guarda el enlace de invitacion generado para un usuario.
+  create or replace function public.actualizar_invite_usuario_admin(
+      p_usuario_id uuid,
+      p_invite_link text
+  )
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path = aexfy, auth, public
+  as $$
+  begin
+      update aexfy.usuarios
+      set metadatos = coalesce(metadatos, '{}'::jsonb)
+          || jsonb_build_object(
+              'invite_link', p_invite_link,
+              'invite_at', timezone('utc', now())
+          ),
+          actualizado_en = timezone('utc', now())
+      where id = p_usuario_id;
+
+      return jsonb_build_object(
+          'usuario_id', p_usuario_id,
+          'invite_link', p_invite_link
+      );
+  end;
+  $$;
+
+  comment on function public.actualizar_invite_usuario_admin(uuid, text)
+  is 'Guarda enlace de invitacion en metadatos de usuarios.';
+
+grant execute on function public.actualizar_invite_usuario_admin(uuid, text) to service_role;
+
+-- Registra la sesion activa (session_key) para forzar sesion unica.
+create or replace function public.registrar_sesion_usuario_admin(
+    p_usuario_id uuid,
+    p_session_key text,
+    p_ip text,
+    p_user_agent text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, public
+as $$
+begin
+    if p_session_key is null or p_session_key = '' then
+        update aexfy.usuarios
+        set metadatos = coalesce(metadatos, '{}'::jsonb)
+            - 'session_key'
+            - 'session_actualizada_en'
+            - 'session_ip'
+            - 'session_ua'
+        where id = p_usuario_id;
+    else
+        update aexfy.usuarios
+        set metadatos = coalesce(metadatos, '{}'::jsonb)
+            || jsonb_build_object(
+                'session_key', p_session_key,
+                'session_actualizada_en', timezone('utc', now()),
+                'session_ip', p_ip,
+                'session_ua', p_user_agent
+            )
+        where id = p_usuario_id;
+    end if;
+
+    return jsonb_build_object('usuario_id', p_usuario_id, 'session_key', p_session_key);
+end;
+$$;
+
+comment on function public.registrar_sesion_usuario_admin(uuid, text, text, text)
+is 'Registra la session_key activa para forzar sesion unica.';
+
+grant execute on function public.registrar_sesion_usuario_admin(uuid, text, text, text) to service_role;
+
+-- Obtiene la session_key activa registrada para el usuario.
+create or replace function public.obtener_sesion_usuario_admin(
+    p_usuario_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, public
+as $$
+declare
+    v_session_key text;
+begin
+    select metadatos ->> 'session_key'
+    into v_session_key
+    from aexfy.usuarios
+    where id = p_usuario_id;
+
+    return jsonb_build_object('session_key', v_session_key);
+end;
+$$;
+
+comment on function public.obtener_sesion_usuario_admin(uuid)
+is 'Devuelve la session_key activa del usuario para validar sesion unica.';
+
+grant execute on function public.obtener_sesion_usuario_admin(uuid) to service_role;
+
+-- Elimina un usuario (auth + aexfy) desde el modulo admin.
+create or replace function public.eliminar_usuario_admin(
+    p_usuario_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_auth_id text;
+    v_email text;
+    v_auth_uuid uuid;
+begin
+    select auth_id, email
+    into v_auth_id, v_email
+    from aexfy.usuarios
+    where id = p_usuario_id;
+
+    if v_email is null then
+        raise exception 'Usuario no encontrado.';
+    end if;
+
+    if v_auth_id is not null and v_auth_id <> '' then
+        begin
+            v_auth_uuid := v_auth_id::uuid;
+        exception when invalid_text_representation then
+            v_auth_uuid := null;
+        end;
+    end if;
+
+    -- Limpia referencias en tablas historicas para evitar violaciones de FK.
+    update aexfy.tickets_soporte set creado_por = null where creado_por = p_usuario_id;
+    update aexfy.tickets_soporte set asignado_a = null where asignado_a = p_usuario_id;
+    update aexfy.solicitudes set enviado_por = null where enviado_por = p_usuario_id;
+    update aexfy.solicitudes set asignado_a = null where asignado_a = p_usuario_id;
+    update aexfy.eventos_auditoria set actor_id = null where actor_id = p_usuario_id;
+    update aexfy.controles_ejecutados set ejecutado_por = null where ejecutado_por = p_usuario_id;
+    update aexfy.evidencias_cumplimiento set subido_por = null where subido_por = p_usuario_id;
+    update aexfy.requests set reviewed_by = null where reviewed_by = p_usuario_id;
+
+    delete from aexfy.asignaciones_roles_usuarios
+    where usuario_id = p_usuario_id;
+
+    if v_auth_uuid is not null then
+        delete from auth.identities where user_id = v_auth_uuid;
+        delete from auth.refresh_tokens where user_id = v_auth_uuid;
+        delete from auth.sessions where user_id = v_auth_uuid;
+        delete from auth.users where id = v_auth_uuid;
+    end if;
+
+    delete from aexfy.usuarios
+    where id = p_usuario_id;
+
+    return jsonb_build_object('usuario_id', p_usuario_id, 'email', v_email);
+end;
+$$;
+
+comment on function public.eliminar_usuario_admin(uuid)
+is 'Elimina usuario y su auth asociado desde el modulo admin.';
+
+grant execute on function public.eliminar_usuario_admin(uuid) to service_role;
+
+-- Variante segura usando text para evitar conflictos de tipo (uuid vs varchar).
+create or replace function public.eliminar_usuario_admin_text(
+    p_usuario_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_auth_id text;
+    v_email text;
+begin
+    select auth_id, email
+    into v_auth_id, v_email
+    from aexfy.usuarios
+    where id::text = p_usuario_id::text;
+
+    if v_email is null then
+        raise exception 'Usuario no encontrado.';
+    end if;
+
+    update aexfy.tickets_soporte set creado_por = null where creado_por::text = p_usuario_id::text;
+    update aexfy.tickets_soporte set asignado_a = null where asignado_a::text = p_usuario_id::text;
+    update aexfy.solicitudes set enviado_por = null where enviado_por::text = p_usuario_id::text;
+    update aexfy.solicitudes set asignado_a = null where asignado_a::text = p_usuario_id::text;
+    update aexfy.eventos_auditoria set actor_id = null where actor_id::text = p_usuario_id::text;
+    update aexfy.controles_ejecutados set ejecutado_por = null where ejecutado_por::text = p_usuario_id::text;
+    update aexfy.evidencias_cumplimiento set subido_por = null where subido_por::text = p_usuario_id::text;
+    update aexfy.requests set reviewed_by = null where reviewed_by::text = p_usuario_id::text;
+
+    delete from aexfy.asignaciones_roles_usuarios
+    where usuario_id::text = p_usuario_id::text;
+
+    if v_auth_id is not null and v_auth_id <> '' then
+        delete from auth.identities where user_id::text = v_auth_id::text;
+        delete from auth.refresh_tokens where user_id::text = v_auth_id::text;
+        delete from auth.sessions where user_id::text = v_auth_id::text;
+        delete from auth.users where id::text = v_auth_id::text;
+    end if;
+
+    -- Fallback por email si auth_id no existia o no coincide.
+    if v_email is not null and v_email <> '' then
+        delete from auth.users where email = v_email;
+    end if;
+
+    delete from aexfy.usuarios
+    where id::text = p_usuario_id::text;
+
+    return jsonb_build_object('usuario_id', p_usuario_id, 'email', v_email);
+end;
+$$;
+
+comment on function public.eliminar_usuario_admin_text(text)
+is 'Elimina usuario usando text para evitar conflictos de tipo.';
+
+grant execute on function public.eliminar_usuario_admin_text(text) to service_role;
+
+-- Resumen de empresas por zona/estado/plan para reportes.
+create or replace function public.resumen_empresas_admin()
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_zonas jsonb;
+    v_estados jsonb;
+    v_planes jsonb;
+begin
+    select coalesce(
+        jsonb_agg(jsonb_build_object('zona', x.zona, 'total', x.total) order by x.zona),
+        '[]'::jsonb
+    )
+    into v_zonas
+    from (
+        select zona, count(*) as total
+        from aexfy.empresas
+        group by zona
+    ) x;
+
+    select coalesce(
+        jsonb_agg(jsonb_build_object('estado', x.estado, 'total', x.total) order by x.estado),
+        '[]'::jsonb
+    )
+    into v_estados
+    from (
+        select estado, count(*) as total
+        from aexfy.empresas
+        group by estado
+    ) x;
+
+    select coalesce(
+        jsonb_agg(jsonb_build_object('plan', x.plan, 'total', x.total) order by x.plan),
+        '[]'::jsonb
+    )
+    into v_planes
+    from (
+        select plan, count(*) as total
+        from aexfy.empresas
+        group by plan
+    ) x;
+
+    return jsonb_build_object(
+        'zonas', v_zonas,
+        'estados', v_estados,
+        'planes', v_planes
+    );
+end;
+$$;
+
+comment on function public.resumen_empresas_admin()
+is 'Resumen de empresas para reportes (zona, estado, plan).';
+
+grant execute on function public.resumen_empresas_admin() to service_role;
+
+-- Resumen de usuarios por zona/estado/tipo para reportes.
+create or replace function public.resumen_usuarios_admin()
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_zonas jsonb;
+    v_estados jsonb;
+    v_tipos jsonb;
+begin
+    select coalesce(
+        jsonb_agg(jsonb_build_object('zona', x.zona, 'total', x.total) order by x.zona),
+        '[]'::jsonb
+    )
+    into v_zonas
+    from (
+        select zona, count(*) as total
+        from aexfy.usuarios
+        group by zona
+    ) x;
+
+    select coalesce(
+        jsonb_agg(jsonb_build_object('estado', x.estado, 'total', x.total) order by x.estado),
+        '[]'::jsonb
+    )
+    into v_estados
+    from (
+        select estado, count(*) as total
+        from aexfy.usuarios
+        group by estado
+    ) x;
+
+    select coalesce(
+        jsonb_agg(jsonb_build_object('tipo', x.tipo, 'total', x.total) order by x.tipo),
+        '[]'::jsonb
+    )
+    into v_tipos
+    from (
+        select tipo_usuario as tipo, count(*) as total
+        from aexfy.usuarios
+        group by tipo_usuario
+    ) x;
+
+    return jsonb_build_object(
+        'zonas', v_zonas,
+        'estados', v_estados,
+        'tipos', v_tipos
+    );
+end;
+$$;
+
+comment on function public.resumen_usuarios_admin()
+is 'Resumen de usuarios para reportes (zona, estado, tipo).';
+
+grant execute on function public.resumen_usuarios_admin() to service_role;
+
+-- Cambios masivos para actualizar estado, zona o rol en lote.
+create or replace function public.cambios_masivos_usuarios(
+    p_usuario_ids uuid[],
+    p_accion text,
+    p_valor text
+)
+returns integer
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_rol_id uuid;
+    v_actualizados integer := 0;
+begin
+    if p_accion = 'estado' then
+        update aexfy.usuarios
+        set
+            estado = p_valor,
+            actualizado_en = timezone('utc', now())
+        where id = any(p_usuario_ids);
+        get diagnostics v_actualizados = row_count;
+        return v_actualizados;
+    end if;
+
+    if p_accion = 'zona' then
+        update aexfy.usuarios
+        set
+            zona = p_valor,
+            metadatos = coalesce(metadatos, '{}'::jsonb)
+                || jsonb_build_object('zona', p_valor),
+            actualizado_en = timezone('utc', now())
+        where id = any(p_usuario_ids);
+        get diagnostics v_actualizados = row_count;
+        return v_actualizados;
+    end if;
+
+    if p_accion = 'rol' then
+        insert into aexfy.roles (nombre, alcance, descripcion, visibilidad)
+        values (
+            p_valor,
+            'staff',
+            'Rol importado desde roles.txt: ' || p_valor,
+            'global'
+        )
+        on conflict (nombre) do update
+        set
+            alcance = excluded.alcance,
+            visibilidad = excluded.visibilidad,
+            descripcion = coalesce(aexfy.roles.descripcion, excluded.descripcion)
+        returning id into v_rol_id;
+
+        delete from aexfy.asignaciones_roles_usuarios
+        where usuario_id = any(p_usuario_ids);
+
+        insert into aexfy.asignaciones_roles_usuarios (usuario_id, rol_id)
+        select unnest(p_usuario_ids), v_rol_id;
+
+        update aexfy.usuarios
+        set
+            metadatos = coalesce(metadatos, '{}'::jsonb)
+                || jsonb_build_object('role', p_valor, 'roles', array[p_valor]::text[]),
+            actualizado_en = timezone('utc', now())
+        where id = any(p_usuario_ids);
+
+        get diagnostics v_actualizados = row_count;
+        return v_actualizados;
+    end if;
+
+    raise exception 'Accion masiva no soportada.';
+end;
+$$;
+
+comment on function public.cambios_masivos_usuarios(uuid[], text, text)
+is 'Aplica cambios masivos de estado, zona o rol sin exponer aexfy.';
+
+grant execute on function public.cambios_masivos_usuarios(uuid[], text, text) to service_role;
+
+  -- Funcion para construir el estado compartido que usara Admin en lugar del blob antiguo
+  create or replace function aexfy.obtener_estado_admin()
+  returns jsonb
+  language plpgsql
+  stable
+  as $$
+  declare
+      companies jsonb;
+      users jsonb;
+      productos jsonb;
+      suscripciones jsonb;
+      tickets jsonb;
+      controles jsonb;
+      solicitudes jsonb;
+      resumen jsonb;
+  begin
+      -- Compilar las empresas con sus sucursales
+      select jsonb_agg(
+          jsonb_build_object(
+              'id', c.id,
+              'rut', c.rut,
+              'razon_social', c.razon_social,
+              'estado', c.estado,
+              'nivel_sla', c.nivel_sla,
+              'categoria_riesgo', c.categoria_riesgo,
+              'sucursales', (
+                  select coalesce(jsonb_agg(
+                      jsonb_build_object(
+                          'id', s.id,
+                          'nombre', s.nombre,
+                          'estado', s.estado,
+                          'ciudad', s.ciudad,
+                          'comuna', s.comuna
+                      )
+                  ), '[]'::jsonb)
+                  from aexfy.sucursales s
+                  where s.cliente_id = c.id
+              )
+          )
+      ) into companies
+      from aexfy.clientes c;
+
+      -- Usuarios activos
+      select coalesce(jsonb_agg(
+          jsonb_build_object(
+              'id', u.id,
+              'email', u.email,
+              'tipo_usuario', u.tipo_usuario,
+              'estado', u.estado,
+              'cliente_id', u.cliente_id,
+              'sucursal_id', u.sucursal_id,
+              'metadatos', u.metadatos
+          )
+      ), '[]'::jsonb) into users
+      from aexfy.usuarios u;
+
+      -- Productos disponibles para arrendar
+      select coalesce(jsonb_agg(
+          jsonb_build_object(
+              'id', p.id,
+              'slug', p.slug,
+              'nombre', p.nombre,
+              'vertical', p.vertical,
+              'estado', p.estado
+          )
+      ), '[]'::jsonb) into productos
+      from aexfy.productos_software p;
+
+      -- Suscripciones asociadas
+      select coalesce(jsonb_agg(
+          jsonb_build_object(
+              'id', s.id,
+              'cliente_id', s.cliente_id,
+              'producto_id', s.producto_id,
+              'estado', s.estado,
+              'fecha_inicio', s.fecha_inicio,
+              'fecha_fin', s.fecha_fin,
+              'valor_mensual', s.valor_mensual
+          )
+      ), '[]'::jsonb) into suscripciones
+      from aexfy.suscripciones s;
+
+      -- Tickets abiertos para seguimiento
+      select coalesce(jsonb_agg(
+          jsonb_build_object(
+              'id', t.id,
+              'cliente_id', t.cliente_id,
+              'sucursal_id', t.sucursal_id,
+              'tipo_ticket', t.tipo_ticket,
+              'prioridad', t.prioridad,
+              'estado', t.estado,
+              'abierto_en', t.abierto_en
+          )
+      ), '[]'::jsonb) into tickets
+      from aexfy.tickets_soporte t;
+
+      -- Controles de cumplimiento planificados
+      select coalesce(jsonb_agg(
+          jsonb_build_object(
+              'id', c.id,
+              'codigo_control', c.codigo_control,
+              'descripcion', c.descripcion,
+              'rol_responsable', c.rol_responsable,
+              'frecuencia', c.frecuencia
+          )
+      ), '[]'::jsonb) into controles
+      from aexfy.controles_cumplimiento c;
+
+      -- Solicitudes de empresas pendientes
+      select coalesce(jsonb_agg(
+          jsonb_build_object(
+              'id', r.id,
+              'status', r.status,
+              'payload', r.metadata,
+              'created_at', r.created_at,
+              'submitted_by', r.submitted_by
+          )
+      ), '[]'::jsonb)
+      into solicitudes
+      from aexfy.requests r
+      where r.request_type = 'company'
+      order by r.created_at desc;
+
+      -- Resumen para metadatos
+      resumen := jsonb_build_object(
+          'total_clientes', (select count(*) from aexfy.clientes),
+          'total_usuarios', (select count(*) from aexfy.usuarios),
+          'total_productos', (select count(*) from aexfy.productos_software),
+          'total_tickets_abiertos', (select count(*) from aexfy.tickets_soporte where estado = 'abierto'),
+          'ultima_actualizacion', now()
+      );
+
+      return jsonb_build_object(
+          'companies', coalesce(companies, '[]'::jsonb),
+          'users', coalesce(users, '[]'::jsonb),
+          'productos', coalesce(productos, '[]'::jsonb),
+          'suscripciones', coalesce(suscripciones, '[]'::jsonb),
+          'tickets', coalesce(tickets, '[]'::jsonb),
+          'controles', coalesce(controles, '[]'::jsonb),
+        'meta', jsonb_build_object(
+            'summary', resumen,
+            'supportTemplates', '[]'::jsonb,
+            'productLibrary', '[]'::jsonb,
+            'productTemplates', '[]'::jsonb,
+            'auditLog', '[]'::jsonb,
+            'userRequests', '[]'::jsonb,
+            'companyRequests', coalesce(solicitudes, '[]'::jsonb),
+            'notifications', '[]'::jsonb
+        )
+      );
+  end;
+  $$;
+
+
+-- INSERCIONES FINALES
+-- Limpieza de usuarios anteriores para evitar conflictos de email y auth_id.
+delete from auth.identities where user_id in (
+  select id from auth.users where email in ('aexfytech@gmail.com')
+);
+delete from auth.users where email in ('aexfytech@gmail.com');
+delete from aexfy.usuarios where email in ('aexfytech@gmail.com');
+
+-- Usuario inicial en Auth; incluye campos requeridos por GoTrue para login.
+-- confirmed_at puede ser columna generada; no se setea manualmente.
+with nuevo as (
+  select
+    gen_random_uuid() as id,
+    (select id from auth.instances limit 1) as instance_id
+)
+insert into auth.users (
+  id,
+  aud,
+  role,
+  email,
+  encrypted_password,
+  email_confirmed_at,
+  instance_id,
+  created_at,
+  updated_at,
+  raw_app_meta_data,
+  raw_user_meta_data
+)
+select
+  nuevo.id,
+  'authenticated',
+  'authenticated',
+  'aexfytech@gmail.com',
+  crypt('a93]:y/#GAe1', gen_salt('bf')),
+  now(),
+  nuevo.instance_id,
+  now(),
+  now(),
+  '{"provider":"email","providers":["email"]}',
+  jsonb_build_object(
+    'rut','11.111.111-1',
+    'email_verified',true,
+    'full_name','Aexfy Tech',
+    'role','AexfyOwner',
+    'roles',array['AexfyOwner']::text[]
+  )
+from nuevo;
+
+-- Identidad email necesaria para login con password.
+insert into auth.identities (
+  id,
+  user_id,
+  identity_data,
+  provider,
+  provider_id,
+  created_at,
+  updated_at,
+  last_sign_in_at
+)
+select
+  gen_random_uuid(),
+  u.id,
+  jsonb_build_object('sub', u.id::text, 'email', u.email),
+  'email',
+  u.email,
+  now(),
+  now(),
+  now()
+from auth.users u
+where u.email = 'aexfytech@gmail.com'
+  and not exists (
+    select 1
+    from auth.identities i
+    where i.user_id = u.id
+      and i.provider = 'email'
+  );
+
+-- Usuario en aexfy.usuarios enlazado al auth.users creado.
+insert into aexfy.usuarios (
+  auth_id,
+  email,
+  nombres,
+  apellidos,
+  rut,
+  tipo_usuario,
+  estado,
+  metadatos,
+  creado_en,
+  actualizado_en
+)
+values (
+  (select id from auth.users where email = 'aexfytech@gmail.com' limit 1),
+  'aexfytech@gmail.com',
+  'Aexfy',
+  'Tech',
+  '11.111.111-1',
+  'staff_aexfy',
+  'activo',
+  jsonb_build_object(
+    'role','AexfyOwner',
+    'roles',array['AexfyOwner']::text[],
+    'full_name','Aexfy Tech'
+  ),
+  now(),
+  now()
+)
+on conflict (auth_id) do update set
+  email = excluded.email,
+  nombres = excluded.nombres,
+  apellidos = excluded.apellidos,
+  rut = excluded.rut,
+  metadatos = excluded.metadatos,
+  actualizado_en = now();
+
+-- OPTIMIZACION DE CONSULTAS (rendimiento para listados y busquedas)
+-- Extensiones necesarias para busquedas tipo ILIKE con comodines.
+create extension if not exists pg_trgm;
+
+-- Indices para filtros exactos de usuarios.
+create index if not exists idx_usuarios_estado on aexfy.usuarios (estado);
+create index if not exists idx_usuarios_tipo on aexfy.usuarios (tipo_usuario);
+create index if not exists idx_usuarios_zona on aexfy.usuarios (zona);
+create index if not exists idx_usuarios_creado_en on aexfy.usuarios (creado_en desc);
+
+-- Indices trigram para busquedas parciales (ILIKE) en usuarios.
+create index if not exists idx_usuarios_email_trgm on aexfy.usuarios using gin (email gin_trgm_ops);
+create index if not exists idx_usuarios_rut_trgm on aexfy.usuarios using gin (rut gin_trgm_ops);
+create index if not exists idx_usuarios_nombres_trgm on aexfy.usuarios using gin (nombres gin_trgm_ops);
+create index if not exists idx_usuarios_apellidos_trgm on aexfy.usuarios using gin (apellidos gin_trgm_ops);
+
+-- Indices para roles (joins y filtros).
+create index if not exists idx_asignaciones_roles_usuario on aexfy.asignaciones_roles_usuarios (usuario_id);
+create index if not exists idx_asignaciones_roles_rol on aexfy.asignaciones_roles_usuarios (rol_id);
+
+-- Indices para filtros exactos de empresas.
+create index if not exists idx_clientes_estado on aexfy.clientes (estado);
+create index if not exists idx_clientes_plan on aexfy.clientes (plan);
+create index if not exists idx_clientes_zona on aexfy.clientes (zona);
+create index if not exists idx_clientes_creado_en on aexfy.clientes (creado_en desc);
+
+-- Indices trigram para busquedas parciales (ILIKE) en empresas.
+create index if not exists idx_clientes_rut_trgm on aexfy.clientes using gin (rut gin_trgm_ops);
+create index if not exists idx_clientes_razon_trgm on aexfy.clientes using gin (razon_social gin_trgm_ops);
+create index if not exists idx_clientes_fantasia_trgm on aexfy.clientes using gin (nombre_fantasia gin_trgm_ops);
+create index if not exists idx_clientes_email_trgm on aexfy.clientes using gin (email gin_trgm_ops);
+
+-- TERMINAL SQL ADMINISTRATIVA (SOLO AEXFY OWNER Y GERENTE EN BACKEND)
+-- Ejecuta scripts SQL desde la interfaz interna (terminal/views.py).
+drop function if exists public.ejecutar_sql_admin(text);
+
+create or replace function public.ejecutar_sql_admin(
+    p_sql text,
+    p_actor_id uuid,
+    p_actor_email text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = aexfy, auth, public
+as $$
+declare
+    v_stmt text;
+    v_rows jsonb;
+    v_rowcount integer;
+    v_resultados jsonb := '[]'::jsonb;
+begin
+    if p_sql is null or trim(p_sql) = '' then
+        raise exception 'SQL vacio.';
+    end if;
+
+    -- Marca la sesion para auditoria y datos masivos.
+    perform set_config('app.terminal', 'on', true);
+    perform set_config('app.actor_id', coalesce(p_actor_id::text, ''), true);
+    perform set_config('app.actor_email', coalesce(p_actor_email, ''), true);
+
+    -- Ejecuta cada sentencia separada por ';' y acumula resultados.
+    for v_stmt in
+        select trim(s) from regexp_split_to_table(p_sql, ';') as s
+    loop
+        if v_stmt = '' then
+            continue;
+        end if;
+
+        if v_stmt ~* '^\s*select' then
+            execute format(
+                'select coalesce(jsonb_agg(t), ''[]''::jsonb) from (%s) t',
+                v_stmt
+            )
+            into v_rows;
+            v_resultados := v_resultados || jsonb_build_array(
+                jsonb_build_object('tipo', 'select', 'rows', v_rows)
+            );
+        else
+            execute v_stmt;
+            get diagnostics v_rowcount = row_count;
+            v_resultados := v_resultados || jsonb_build_array(
+                jsonb_build_object('tipo', 'exec', 'rowcount', v_rowcount)
+            );
+        end if;
+    end loop;
+
+    -- Limpia flags de sesion.
+    perform set_config('app.terminal', 'off', true);
+    perform set_config('app.actor_id', '', true);
+    perform set_config('app.actor_email', '', true);
+
+    return jsonb_build_object('tipo', 'batch', 'resultados', v_resultados);
+exception when others then
+    perform set_config('app.terminal', 'off', true);
+    perform set_config('app.actor_id', '', true);
+    perform set_config('app.actor_email', '', true);
+    raise;
+end;
+$$;
+
+comment on function public.ejecutar_sql_admin(text, uuid, text)
+is 'Ejecuta SQL desde la terminal interna y registra actor para auditoria.';
+
+grant execute on function public.ejecutar_sql_admin(text, uuid, text) to service_role;
+
+-- Auditoria automatica para inserciones/actualizaciones desde terminal.
+create or replace function aexfy.log_evento_terminal()
+returns trigger
+language plpgsql
+as $$
+declare
+    v_terminal text;
+    v_actor_id text;
+    v_actor_email text;
+    v_id_objetivo text;
+    v_registro jsonb;
+begin
+    v_terminal := current_setting('app.terminal', true);
+    if v_terminal is distinct from 'on' then
+        return coalesce(new, old);
+    end if;
+
+    v_actor_id := nullif(current_setting('app.actor_id', true), '');
+    v_actor_email := nullif(current_setting('app.actor_email', true), '');
+
+    if tg_op = 'DELETE' then
+        v_registro := to_jsonb(old);
+        v_id_objetivo := old.id::text;
+    else
+        v_registro := to_jsonb(new);
+        v_id_objetivo := new.id::text;
+    end if;
+
+    insert into aexfy.eventos_auditoria (
+        actor_id,
+        actor_email,
+        accion,
+        tabla_objetivo,
+        id_objetivo,
+        severidad,
+        metadatos
+    )
+    values (
+        case when v_actor_id is null then null else v_actor_id::uuid end,
+        v_actor_email,
+        lower(tg_op) || '_terminal',
+        tg_table_schema || '.' || tg_table_name,
+        v_id_objetivo,
+        'media',
+        jsonb_build_object(
+            'terminal', true,
+            'operacion', tg_op,
+            'registro', v_registro
+        )
+    );
+
+    return coalesce(new, old);
+exception when invalid_text_representation then
+    insert into aexfy.eventos_auditoria (
+        actor_id,
+        actor_email,
+        accion,
+        tabla_objetivo,
+        id_objetivo,
+        severidad,
+        metadatos
+    )
+    values (
+        null,
+        v_actor_email,
+        lower(tg_op) || '_terminal',
+        tg_table_schema || '.' || tg_table_name,
+        v_id_objetivo,
+        'media',
+        jsonb_build_object(
+            'terminal', true,
+            'operacion', tg_op,
+            'registro', v_registro
+        )
+    );
+    return coalesce(new, old);
+end;
+$$;
+
+-- Completa seller_email en empresas cuando viene desde terminal.
+create or replace function aexfy.terminal_set_seller_email()
+returns trigger
+language plpgsql
+as $$
+declare
+    v_terminal text;
+    v_actor_email text;
+begin
+    v_terminal := current_setting('app.terminal', true);
+    if v_terminal is distinct from 'on' then
+        return new;
+    end if;
+
+    v_actor_email := nullif(current_setting('app.actor_email', true), '');
+    if (new.seller_email is null or new.seller_email = '') and v_actor_email is not null then
+        new.seller_email := v_actor_email;
+    end if;
+
+    return new;
+end;
+$$;
+
+drop trigger if exists trg_terminal_clientes on aexfy.clientes;
+create trigger trg_terminal_clientes
+before insert on aexfy.clientes
+for each row execute function aexfy.terminal_set_seller_email();
+
+drop trigger if exists trg_terminal_audit_clientes on aexfy.clientes;
+create trigger trg_terminal_audit_clientes
+after insert or update or delete on aexfy.clientes
+for each row execute function aexfy.log_evento_terminal();
+
+drop trigger if exists trg_terminal_audit_usuarios on aexfy.usuarios;
+create trigger trg_terminal_audit_usuarios
+after insert or update or delete on aexfy.usuarios
+for each row execute function aexfy.log_evento_terminal();
+
+-- Eventos en tiempo real para refrescar sesiones en admin.
+create table if not exists public.realtime_events (
+    id bigserial primary key,
+    tabla text not null,
+    accion text not null,
+    entidad_id uuid,
+    creado_en timestamptz not null default timezone('utc', now())
+);
+
+alter table public.realtime_events enable row level security;
+drop policy if exists realtime_events_read on public.realtime_events;
+create policy realtime_events_read
+on public.realtime_events
+for select
+to authenticated
+using (true);
+
+create or replace function public.emit_realtime_event()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, aexfy
+as $$
+declare
+    v_id uuid;
+begin
+    if tg_op = 'DELETE' then
+        v_id := old.id;
+    else
+        v_id := new.id;
+    end if;
+
+    insert into public.realtime_events (tabla, accion, entidad_id)
+    values (tg_table_name, lower(tg_op), v_id);
+
+    return null;
+end;
+$$;
+
+drop trigger if exists trg_realtime_usuarios on aexfy.usuarios;
+create trigger trg_realtime_usuarios
+after insert or update or delete on aexfy.usuarios
+for each row execute function public.emit_realtime_event();
+
+drop trigger if exists trg_realtime_clientes on aexfy.clientes;
+create trigger trg_realtime_clientes
+after insert or update or delete on aexfy.clientes
+for each row execute function public.emit_realtime_event();
+
+drop trigger if exists trg_realtime_requests on aexfy.requests;
+create trigger trg_realtime_requests
+after insert or update or delete on aexfy.requests
+for each row execute function public.emit_realtime_event();
+
+drop trigger if exists trg_realtime_auditoria on aexfy.eventos_auditoria;
+create trigger trg_realtime_auditoria
+after insert or update or delete on aexfy.eventos_auditoria
+for each row execute function public.emit_realtime_event();
+
+do $$
+begin
+    if exists (
+        select 1
+        from information_schema.tables
+        where table_schema = 'aexfy'
+          and table_name = 'terminal_ejecuciones'
+    ) then
+        drop trigger if exists trg_realtime_terminal on aexfy.terminal_ejecuciones;
+        create trigger trg_realtime_terminal
+        after insert or update or delete on aexfy.terminal_ejecuciones
+        for each row execute function public.emit_realtime_event();
+    end if;
+end;
+$$;

@@ -1,0 +1,26 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Empresa creada{% endblock %}
+
+{% block content %}
+    <!-- Confirmacion de creacion de empresa; usa empresas/views.py -->
+    <h1>Empresa</h1>
+    {% if mensaje %}
+        <p>{{ mensaje }}</p>
+    {% else %}
+        <p>Empresa creada correctamente.</p>
+    {% endif %}
+
+    {% if enlace_invitacion %}
+        <p>
+            Se alcanzo el limite de correos de Supabase. Comparte este enlace con el
+            Dueño para que cree su contrasena:
+        </p>
+        <p><strong>Correo:</strong> {{ correo_invitado }}</p>
+        <p><a href="{{ enlace_invitacion }}">{{ enlace_invitacion }}</a></p>
+    {% endif %}
+
+    <p><a href="{% url 'empresas_crear' %}">Crear otra empresa</a></p>
+    <p><a href="{% url 'empresas_listado' %}">Volver al listado</a></p>
+{% endblock %}

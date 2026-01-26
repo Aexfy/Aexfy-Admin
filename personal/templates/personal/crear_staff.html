@@ -1,0 +1,125 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Crear staff{% endblock %}
+
+{% block extra_js %}
+    <!-- Script de formato automatico para RUT, nombres y telefonos -->
+    <script src="{% static 'personal/js/formatos.js' %}" defer></script>
+{% endblock %}
+
+{% block content %}
+    <!-- Template del modulo de personal; se conecta con personal/views.py -->
+    <h1>Crear usuario de staff</h1>
+    {% if mensaje %}
+        <p>{{ mensaje }}</p>
+    {% endif %}
+    <p>Se enviara una invitacion al correo para que el usuario cree su contrasena.</p>
+    <form method="post" class="form-grid" novalidate>
+        {% csrf_token %}
+
+        <div class="form-field">
+            <label for="{{ form.rut.id_for_label }}">{{ form.rut.label }}</label>
+            {{ form.rut }}
+            {% if form.rut.help_text %}
+                <small>{{ form.rut.help_text }}</small>
+            {% endif %}
+            {% if form.rut.errors %}
+                <div class="form-error">{{ form.rut.errors }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+            {{ form.email }}
+            {% if form.email.errors %}
+                <div class="form-error">{{ form.email.errors }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.primer_nombre.id_for_label }}">{{ form.primer_nombre.label }}</label>
+            {{ form.primer_nombre }}
+            {% if form.primer_nombre.errors %}
+                <div class="form-error">{{ form.primer_nombre.errors }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.segundo_nombre.id_for_label }}">{{ form.segundo_nombre.label }}</label>
+            {{ form.segundo_nombre }}
+            {% if form.segundo_nombre.errors %}
+                <div class="form-error">{{ form.segundo_nombre.errors }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.apellido_paterno.id_for_label }}">{{ form.apellido_paterno.label }}</label>
+            {{ form.apellido_paterno }}
+            {% if form.apellido_paterno.errors %}
+                <div class="form-error">{{ form.apellido_paterno.errors }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.apellido_materno.id_for_label }}">{{ form.apellido_materno.label }}</label>
+            {{ form.apellido_materno }}
+            {% if form.apellido_materno.errors %}
+                <div class="form-error">{{ form.apellido_materno.errors }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.telefono.id_for_label }}">{{ form.telefono.label }}</label>
+            <div class="input-prefix">
+                <span>+56</span>
+                {{ form.telefono }}
+            </div>
+            {% if form.telefono.errors %}
+                <div class="form-error">{{ form.telefono.errors }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.telefono_emergencia.id_for_label }}">{{ form.telefono_emergencia.label }}</label>
+            <div class="input-prefix">
+                <span>+56</span>
+                {{ form.telefono_emergencia }}
+            </div>
+            {% if form.telefono_emergencia.errors %}
+                <div class="form-error">{{ form.telefono_emergencia.errors }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.rol.id_for_label }}">{{ form.rol.label }}</label>
+            {{ form.rol }}
+            {% if form.rol.errors %}
+                <div class="form-error">{{ form.rol.errors }}</div>
+            {% endif %}
+        </div>
+
+        {% if mostrar_zona %}
+            <div class="form-field">
+                <label for="{{ form.zona.id_for_label }}">{{ form.zona.label }}</label>
+                {{ form.zona }}
+                {% if form.zona.field.disabled %}
+                    <small>Tu rol fija la zona automaticamente.</small>
+                {% endif %}
+                {% if form.zona.errors %}
+                    <div class="form-error">{{ form.zona.errors }}</div>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {% if form.non_field_errors %}
+            <div class="form-field form-field--full">
+                <div class="form-error">{{ form.non_field_errors }}</div>
+            </div>
+        {% endif %}
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn--crear">Crear usuario</button>
+        </div>
+    </form>
+{% endblock %}

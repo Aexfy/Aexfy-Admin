@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% load static %}
+{% load terminal_extras %}
+
+{% block title %}Terminal SQL{% endblock %}
+
+{% block content %}
+    <!-- Terminal SQL administrativa; ejecuta scripts via terminal/views.py -->
+    <h1>Terminal SQL</h1>
+    <p>Solo AexfyOwner y Gerente pueden ejecutar scripts en la base de datos.</p>
+
+    {% if mensaje %}
+        <p>{{ mensaje }}</p>
+    {% endif %}
+
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        <div class="form-field form-field--full">
+            <label for="{{ form.sql.id_for_label }}">{{ form.sql.label }}</label>
+            {{ form.sql }}
+            {{ form.sql.errors }}
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn--primario" data-confirm="¿Ejecutar este script SQL?">
+                Ejecutar script
+            </button>
+        </div>
+    </form>
+
+    {% if resumenes %}
+        <section style="margin-top: 16px;">
+            <h2>Resumen de ejecuciones</h2>
+            <ul>
+                {% for resumen in resumenes %}
+                    <li>
+                        Consulta {{ resumen.indice }}:
+                        {% if resumen.tipo == "select" %}
+                            SELECT ({{ resumen.total }} fila(s)).
+                        {% else %}
+                            Ejecutado ({{ resumen.total }} fila(s) afectadas).
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        </section>
+    {% endif %}
+
+    {% if tablas %}
+        <section style="margin-top: 16px;">
+            <h2>Resultados</h2>
+            {% for tabla in tablas %}
+                <div class="card" style="margin-bottom: 12px;">
+                    <strong>Consulta {{ tabla.indice }} ({{ tabla.total }} fila(s))</strong>
+                    <div style="overflow-x: auto; margin-top: 8px;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    {% for columna in tabla.columnas %}
+                                        <th>{{ columna }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for fila in tabla.filas %}
+                                    <tr>
+                                        {% for columna in tabla.columnas %}
+                                            <td>{{ fila|get_item:columna }}</td>
+                                        {% endfor %}
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            {% endfor %}
+        </section>
+    {% endif %}
+
+    {% if resultado and resultado.error %}
+        <section class="card" style="margin-top: 16px;">
+            <h2>Error</h2>
+            <p>{{ resultado.error }}</p>
+        </section>
+    {% endif %}
+{% endblock %}

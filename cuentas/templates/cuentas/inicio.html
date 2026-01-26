@@ -1,0 +1,50 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Inicio AEXFY{% endblock %}
+
+{% block content %}
+    <!-- Contenido principal con datos de sesion guardados en cuentas/sesiones.py -->
+    <header class="page-header">
+        <div>
+            <h1>Panel principal</h1>
+            <p>Administra usuarios y empresas desde un solo lugar.</p>
+        </div>
+    </header>
+
+    {% if usuario %}
+        <section class="card-grid">
+            <div class="card">
+                <h2 class="card-title">Tu sesion</h2>
+                <p class="card-subtitle">Resumen del usuario autenticado.</p>
+                <div class="meta-list">
+                    <div><strong>RUT:</strong> {{ usuario.rut }}</div>
+                    <div><strong>Nombre:</strong> {{ usuario.nombres }} {{ usuario.apellidos }}</div>
+                    <div><strong>Email:</strong> {{ usuario.email }}</div>
+                    <div><strong>Estado:</strong> {{ usuario.estado }}</div>
+                </div>
+            </div>
+            <div class="card">
+                <h2 class="card-title">Acciones rapidas</h2>
+                <p class="card-subtitle">Accesos directos para tu operacion diaria.</p>
+                <div class="link-list">
+                    {% if perm_nav.staff %}
+                        <a href="{% url 'staff_crear' %}" class="btn btn--crear">Crear usuario de staff</a>
+                    {% endif %}
+                    {% if perm_nav.usuarios %}
+                        <a href="{% url 'usuarios_listado' %}" class="btn btn--primario">Gestion de usuarios</a>
+                    {% endif %}
+                    {% if perm_nav.empresas %}
+                        <a href="{% url 'empresas_listado' %}" class="btn btn--primario">Gestion de empresas</a>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+    {% else %}
+        <!-- Fallback si no hay datos; deberia ser raro si sesion existe -->
+        <div class="card">
+            <h2 class="card-title">Sin datos de sesion</h2>
+            <p class="card-subtitle">No hay informacion de usuario cargada.</p>
+        </div>
+    {% endif %}
+{% endblock %}
