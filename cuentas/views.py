@@ -21,31 +21,36 @@ def login_view(request):
     if request.method == "POST":
         # Formulario con reglas de formateo del RUT.
         form = LoginForm(request.POST)
-        if form.is_valid():
-            rut = form.cleaned_data["rut"]
-            password = form.cleaned_data["password"]
+        try:
+            if form.is_valid():
+                rut = form.cleaned_data["rut"]
+                password = form.cleaned_data["password"]
 
-            # Busca el usuario en la tabla aexfy.usuarios usando el RUT formateado.
-            usuario = obtener_usuario_por_rut(rut)
-            if not usuario:
-                form.add_error("rut", "No existe un usuario con ese RUT.")
-            elif usuario.get("estado") != "activo":
-                form.add_error(None, "El usuario no esta activo.")
-            else:
-                try:
-                    # Usa el email de aexfy.usuarios para autenticar en Supabase Auth.
-                    auth_respuesta = iniciar_sesion_supabase(usuario.get("email"), password)
-                    if not getattr(auth_respuesta, "session", None):
-                        form.add_error("password", "Credenciales invalidas.")
-                    else:
-                        # Guarda tokens y datos del usuario en la sesion de Django.
-                        guardar_sesion(request, auth_respuesta, usuario)
-                        return redirect("inicio")
-                except Exception as exc:
-                    # Registra el error real en el log para depuracion interna.
-                    logger.warning("Error Supabase Auth al iniciar sesion: %s", exc)
-                    # Muestra mensaje generico al usuario final.
-                    form.add_error(None, "No se pudo iniciar sesion. Revisa tus datos.")
+                # Busca el usuario en la tabla aexfy.usuarios usando el RUT formateado.
+                usuario = obtener_usuario_por_rut(rut)
+                if not usuario:
+                    form.add_error("rut", "No existe un usuario con ese RUT.")
+                elif usuario.get("estado") != "activo":
+                    form.add_error(None, "El usuario no esta activo.")
+                else:
+                    try:
+                        # Usa el email de aexfy.usuarios para autenticar en Supabase Auth.
+                        auth_respuesta = iniciar_sesion_supabase(usuario.get("email"), password)
+                        if not getattr(auth_respuesta, "session", None):
+                            form.add_error("password", "Credenciales invalidas.")
+                        else:
+                            # Guarda tokens y datos del usuario en la sesion de Django.
+                            guardar_sesion(request, auth_respuesta, usuario)
+                            return redirect("inicio")
+                    except Exception:
+                        # Registra el error real en el log para depuracion interna.
+                        logger.exception("Error Supabase Auth al iniciar sesion.")
+                        # Muestra mensaje generico al usuario final.
+                        form.add_error(None, "No se pudo iniciar sesion. Revisa tus datos.")
+        except Exception:
+            # Logea cualquier error inesperado del flujo de login (con stacktrace).
+            logger.exception("Error inesperado en login_view.")
+            form.add_error(None, "No se pudo iniciar sesion. Revisa tus datos.")
     else:
         # Formulario vacio para GET.
         form = LoginForm()
